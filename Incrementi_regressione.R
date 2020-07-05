@@ -3,21 +3,55 @@ library(car)
 library(glmnet)
 library(ggplot2)
 setwd("/Users/vincenzo/Documents/GitHub/sda-project")
-data = read.csv("covid-data.csv", header=T, sep=",")
-columns <- colnames(data)
-data <- data[-c(11654,11743,11747,11748,11749,11736),]
-data_filtered <- data[which(data$iso_code %in% c('ITA', 'GBR', 'IND', 'JPN', 'ISR', 'LUX', 'AUS', 'AUT', 'NZL', 'ARG', 'BEL', 'CAN', 'ZAF', 'PRT')),columns[c(10,15,16,20,21,22,23,24,25,26,27,28,29,30,31)]]
-data_test = data_filtered <- data[which(data$iso_code %in% c('USA','IRN','KOR','URY')),columns[c(10,15,16,20,21,22,23,24,25,26,27,28,29,30,31)]]
 
-# data_filtered <- data[which(data$iso_code %in% c('ITA', 'GBR', 'IND', 'JPN', 'ISR', 'LUX', 'AUS', 'AUT', 'NZL', 'ARG', 'BEL', 'CAN', 'ZAF', 'PRT')),columns[c(6,13,14,20,21,22,23,24,25,26,27,28,29,30,31)]]
-# data_test = data_filtered <- data[which(data$iso_code %in% c('USA','IRN','KOR','URY')),columns[c(6,13,14,20,21,22,23,24,25,26,27,28,29,30,31)]]
-
-data_filtered = na.omit(data_filtered)
+open_dataset <- function(iso_codes, dates=FALSE) {
+  df.data <- read.csv('covid-data.csv')
+  df.data <- df.data[-c(11654,11743,11747,11748,11749,11736),]
+  columns <-
+    if(dates) {
+      columns <- colnames(df.data)[c(4,10,15,16,20,21,22,23,24,25,26,27,28,29,30,31)]
+    } else {
+      columns <- colnames(df.data)[c(10,15,16,20,21,22,23,24,25,26,27,28,29,30,31)]
+    }
+  df.data <- df.data[which(df.data$iso_code %in% iso_codes), columns]
+  df.data <- na.omit(df.data)
+  df.data$new_cases <- df.data$new_cases_per_million
+  df.data$new_cases_per_million <- NULL
+  df.data$new_tests <- df.data$new_tests_per_thousand
+  df.data$new_tests_per_thousand <- NULL
+  df.data$total_tests <- df.data$total_tests_per_thousand
+  df.data$total_tests_per_thousand <- NULL
+  actual_cases <- df.data$total_cases
+  actual_cases <- c(0, actual_cases[1:length(actual_cases)-1])
+  df.data$actual_cases <- actual_cases
+  return(df.data)
+}
+############################################################################################################
+###LOAD THE DATA FROM THE CSV
+data_train = open_dataset(c('ITA', 'GBR', 'IND', 'JPN', 'ISR', 'LUX', 'AUS', 'AUT', 'NZL', 'ARG', 'BEL', 'CAN', 'ZAF', 'PRT','ISL','CHE'))
+data_test = open_dataset( c('USA','IRN','KOR','URY'))
+data_validation = open_dataset(c('RUS','TUR','DNK'))
+#REMOVE NA FROM DATA
+data_train = na.omit(data_train)
 data_test = na.omit(data_test)
+data_validation = na.omit(data_validation)
 
+#CONVERT DATA FROM LINEAR RESPONSE TO LOG RESPONSE
+data_train.log <- data_train
+data_train.log$new_cases_per_million <- log(data_train.log$new_cases_per_million + 0.1)
+data_test.log <- data_test
+data_test.log$new_cases_per_million <- log(data_test.log$new_cases_per_million + 0.1)
+data_validation.log <- data_validation
+data_validation.log$new_cases_per_million <- log(data_validation.log$new_cases_per_million + 0.1)
+#############################################################################################################
+
+
+###############################################################################################################
+#CHECK DEPENDENCY
+pairs(data_train)
 # fit a linear model with all predictors (no changes in the response)
-fit = lm(new_cases_per_million~.,data_filtered)
-#fit = lm(new_cases~.,data_filtered)
+fit = lm(new_cases_per_million~.,data_train)
+#fit = lm(new_cases~.,data_train)
 summary(fit)
 # model diagnositic plots
 dev.new()
@@ -25,9 +59,9 @@ par(mfrow=c(2,2))
 plot(fit)
 
 # fit a linear model with all predictors (log of the response)
-data_filtered.log <- data_filtered
-data_filtered.log$new_cases_per_million <- log(data_filtered.log$new_cases_per_million + 0.1)
-log.fit = lm(new_cases_per_million~.,data_filtered.log)
+data_train.log <- data_train
+data_train.log$new_cases_per_million <- log(data_train.log$new_cases_per_million + 0.1)
+log.fit = lm(new_cases_per_million~.,data_train.log)
 summary(log.fit)
 # model diagnositic plots
 dev.new()
@@ -35,7 +69,7 @@ par(mfrow=c(2,2))
 plot(log.fit)
 
 #Refit the model with only the significant predictors
-adj.fit = lm(new_cases_per_million~.-aged_65_older-aged_70_older-gdp_per_capita-extreme_poverty-cvd_death_rate-diabetes_prevalence-female_smokers-male_smokers,data_filtered)
+adj.fit = lm(new_cases_per_million~.-aged_65_older-aged_70_older-gdp_per_capita-extreme_poverty-cvd_death_rate-diabetes_prevalence-female_smokers-male_smokers,data_train)
 summary(adj.fit)
 # model diagnositic plots
 dev.new()
@@ -43,9 +77,9 @@ par(mfrow=c(2,2))
 plot(adj.fit)
 
 # fit a linear model with only the significant predictors (log of the response)
-data_filtered.log <- data_filtered
-data_filtered.log$new_cases_per_million <- log(data_filtered.log$new_cases_per_million + 0.1)
-adjlog.fit = lm(new_cases_per_million~.-aged_65_older-aged_70_older-gdp_per_capita-extreme_poverty-cvd_death_rate-diabetes_prevalence-female_smokers-male_smokers,data_filtered.log)
+data_train.log <- data_train
+data_train.log$new_cases_per_million <- log(data_train.log$new_cases_per_million + 0.1)
+adjlog.fit = lm(new_cases_per_million~.-aged_65_older-aged_70_older-gdp_per_capita-extreme_poverty-cvd_death_rate-diabetes_prevalence-female_smokers-male_smokers,data_train.log)
 summary(adjlog.fit)
 # model diagnositic plots
 dev.new()
@@ -53,7 +87,7 @@ par(mfrow=c(2,2))
 plot(adjlog.fit)
 
 #BESTSUBSET SELECTION
-regfit.full=regsubsets(data_filtered$new_cases_per_million~.-aged_65_older-aged_70_older-gdp_per_capita-extreme_poverty-cvd_death_rate-diabetes_prevalence-female_smokers-male_smokers,data_filtered,nvmax = 6)
+regfit.full=regsubsets(data_train$new_cases_per_million~.-aged_65_older-aged_70_older-gdp_per_capita-extreme_poverty-cvd_death_rate-diabetes_prevalence-female_smokers-male_smokers,data_train,nvmax = 6)
 reg.summary=summary(regfit.full)
 dev.new()
 par(mfrow=c(2,2))
@@ -76,9 +110,9 @@ dev.new()
 plot(regfit.full,scale="bic")
 
 ###model with 3 predictors
-regfit.3=regsubsets(data_filtered$new_cases_per_million~.,data_filtered,nvmax = 3)
-lm3 = lm(new_cases_per_million~new_tests_per_thousand+median_age+population, data_filtered) 
-lm3.log = lm(new_cases_per_million~+new_tests_per_thousand+median_age+population, data_filtered.log)
+regfit.3=regsubsets(data_train$new_cases_per_million~.,data_train,nvmax = 3)
+lm3 = lm(new_cases_per_million~new_tests_per_thousand+median_age+population, data_train) 
+lm3.log = lm(new_cases_per_million~+new_tests_per_thousand+median_age+population, data_train.log)
 dev.new()
 par(mfrow=c(2,2))
 #plot(lm3)
@@ -87,9 +121,9 @@ vif(lm3)
 vif(lm3.log)
 
 # #model with 5 predictors per 5 
-# regfit.5=regsubsets(data_filtered$new_cases_per_million~.,data_filtered,nvmax = 5)
-# lm5 = lm(new_cases_per_million~total_tests_per_thousand+new_tests_per_thousand+diabetes_prevalence+stringency_index+median_age, data_filtered) 
-# lm5.log = lm(new_cases_per_million~total_tests_per_thousand+new_tests_per_thousand+diabetes_prevalence+stringency_index+median_age, data_filtered.log)
+# regfit.5=regsubsets(data_train$new_cases_per_million~.,data_train,nvmax = 5)
+# lm5 = lm(new_cases_per_million~total_tests_per_thousand+new_tests_per_thousand+diabetes_prevalence+stringency_index+median_age, data_train) 
+# lm5.log = lm(new_cases_per_million~total_tests_per_thousand+new_tests_per_thousand+diabetes_prevalence+stringency_index+median_age, data_train.log)
 # dev.new()
 # par(mfrow=c(2,2))
 # plot(lm5)
@@ -98,10 +132,10 @@ vif(lm3.log)
 # vif(lm5.log)
 
 ###model with 4 predictors 
-# regfit.4=regsubsets(data_filtered$new_cases~.,data_filtered,nvmax = 4)
-# lm4 = lm(new_cases~total_tests+cvd_death_rate+male_smokers+new_tests,data_filtered)
-# lm4.log = lm(new_cases~total_tests+cvd_death_rate+male_smokers+new_tests,data_filtered.log)
-# lm4.sqrt = lm(new_cases~total_tests+cvd_death_rate+male_smokers+new_tests,data_filtered.sqrt)
+# regfit.4=regsubsets(data_train$new_cases~.,data_train,nvmax = 4)
+# lm4 = lm(new_cases~total_tests+cvd_death_rate+male_smokers+new_tests,data_train)
+# lm4.log = lm(new_cases~total_tests+cvd_death_rate+male_smokers+new_tests,data_train.log)
+# lm4.sqrt = lm(new_cases~total_tests+cvd_death_rate+male_smokers+new_tests,data_train.sqrt)
 # dev.new()
 # par(mfrow=c(2,2))
 # plot(lm4)
@@ -111,10 +145,10 @@ vif(lm3.log)
 # vif(lm4.log)
 # vif(lm4.sqrt)
 #model with 7 predictors
-# regfit.10=regsubsets(data_filtered$new_cases~.,data_filtered,nvmax = 10)
-# lm7.log = lm(new_cases~.-stringency_index-population_density-aged_65_older-cvd_death_rate-extreme_poverty-median_age-aged_70_older,data_filtered.log)
-# lm7= lm(new_cases~.-stringency_index-population_density-aged_65_older-cvd_death_rate-extreme_poverty-median_age-aged_70_older,data_filtered)
-# lm7.sqrt = lm(new_cases~.-stringency_index-population_density-aged_65_older-cvd_death_rate-extreme_poverty-median_age-aged_70_older,data_filtered.sqrt)
+# regfit.10=regsubsets(data_train$new_cases~.,data_train,nvmax = 10)
+# lm7.log = lm(new_cases~.-stringency_index-population_density-aged_65_older-cvd_death_rate-extreme_poverty-median_age-aged_70_older,data_train.log)
+# lm7= lm(new_cases~.-stringency_index-population_density-aged_65_older-cvd_death_rate-extreme_poverty-median_age-aged_70_older,data_train)
+# lm7.sqrt = lm(new_cases~.-stringency_index-population_density-aged_65_older-cvd_death_rate-extreme_poverty-median_age-aged_70_older,data_train.sqrt)
 # dev.new()
 # par(mfrow=c(2,2))
 # plot(lm7)
@@ -124,9 +158,9 @@ vif(lm3.log)
 # vif(lm7.log)
 # vif(lm7.sqrt)
 # #model with 10 predictors
-# lm10.log = lm(new_cases~.-stringency_index-population_density-aged_65_older-cvd_death_rate,data_filtered.log)
-# lm10= lm(new_cases~.-stringency_index-population_density-aged_65_older-cvd_death_rate,data_filtered)
-# lm10.sqrt = lm(new_cases~.-stringency_index-population_density-aged_65_older-cvd_death_rate,data_filtered.sqrt)
+# lm10.log = lm(new_cases~.-stringency_index-population_density-aged_65_older-cvd_death_rate,data_train.log)
+# lm10= lm(new_cases~.-stringency_index-population_density-aged_65_older-cvd_death_rate,data_train)
+# lm10.sqrt = lm(new_cases~.-stringency_index-population_density-aged_65_older-cvd_death_rate,data_train.sqrt)
 # dev.new()
 # par(mfrow=c(2,2))
 # plot(lm10)
@@ -145,8 +179,8 @@ vif(lm3.log)
 # If alpha = 0 a ridge regression model is fit.
 # If alpha = 1 (default) then a lasso model is fit. 
 
-x = model.matrix(data_filtered.log$new_cases_per_million~., data_filtered.log)[,-1] # without 1's 
-y = data_filtered.log$new_cases_per_million
+x = model.matrix(data_train.log$new_cases_per_million~., data_train.log)[,-1] # without 1's 
+y = data_train.log$new_cases_per_million
 
 grid=10^seq(10,-2,length=100)
 ridge.mod=glmnet(x,y,alpha=0,lambda=grid)
@@ -233,25 +267,7 @@ predict(out,type="coefficients",s=bestlam)[1:20,]
 dev.new()
 plot(out,label = T, xvar = "lambda")
 
-open_dataset <- function(iso_codes, dates=FALSE) {
-  df.data <- read.csv('covid-data.csv')
-  df.data <- df.data[-c(11654,11743,11747,11748,11749,11736),]
-  columns <-
-    if(dates) {
-      columns <- colnames(df.data)[c(4,10,15,16,20,21,22,23,24,25,26,27,28,29,30)]
-    } else {
-      columns <- colnames(df.data)[c(10,15,16,20,21,22,23,24,25,26,27,28,29,30)]
-    }
-  df.data <- df.data[which(df.data$iso_code %in% iso_codes), columns]
-  df.data <- na.omit(df.data)
-  df.data$new_cases <- df.data$new_cases_per_million
-  df.data$new_cases_per_million <- NULL
-  df.data$new_tests <- df.data$new_tests_per_thousand
-  df.data$new_tests_per_thousand <- NULL
-  df.data$total_tests <- df.data$total_tests_per_thousand
-  df.data$total_tests_per_thousand <- NULL
-  return(df.data)
-}
+
 
 test_country <- function(iso_code, model) {
   df.test <- open_dataset(c(iso_code), dates = TRUE)
