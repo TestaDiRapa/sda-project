@@ -1,3 +1,4 @@
+####################################################################################################
 library(leaps)
 library(car)
 library(glmnet)
@@ -33,6 +34,28 @@ open_dataset <- function(iso_codes, dates=FALSE) {
   df.data$total_cases <- NULL
   return(df.data)
 }
+plot_best_predictors = function(summary,fit){
+  dev.new()
+  par(mfrow=c(2,2))
+  plot(summary$rss ,xlab="Number of Variables ",ylab="RSS",type="l")
+  points(which.min(summary$rss),min(summary$rss), col="red",cex=2,pch=20)
+  plot(summary$adjr2 ,xlab="Number of Variables ",
+       ylab="Adjusted RSq",type="l")
+  points(which.max(summary$adjr2),max(summary$adjr2), col="red",cex=2,pch=20)
+  plot(summary$cp ,xlab="Number of Variables ",ylab="Cp", type="l")
+  points(which.min(summary$cp ),min(summary$cp),col="red",cex=2,pch=20)
+  plot(summary$bic ,xlab="Number of Variables ",ylab="BIC",type="l")
+  points(which.min(summary$bic),min(summary$bic),col="red",cex=2,pch=20)
+  dev.new()
+  plot(fit,scale="r2")
+  dev.new()
+  plot(fit,scale="adjr2")
+  dev.new()
+  plot(fit,scale="Cp")
+  dev.new()
+  plot(fit,scale="bic")
+}
+#############################################################################################################
 ############################################################################################################
 ###LOAD THE DATA FROM THE CSV
 data_train = open_dataset(c('ITA', 'GBR', 'IND', 'JPN', 'ISR', 'LUX', 'AUS', 'AUT', 'NZL', 'ARG', 'BEL', 'CAN', 'ZAF', 'PRT','ISL','CHE'))
@@ -51,13 +74,12 @@ data_validation.log$new_cases <- log(data_validation$new_cases + 0.1)
 data_validation.log$actual_cases = log(data_validation$actual_cases + 0.1)
 #############################################################################################################
 
-
 ###############################################################################################################
 #CHECK DEPENDENCY
 dev.new()
 pairs(~new_cases+stringency_index+population_density+median_age+population,data_train)
 dev.new()
-pairs(~new_cases+aged_65_older+aged_70_older+gdp_per_capita+extreme_poverty,data_train)
+pairs(~new_cases+aged_65_older+aged_70_older+gdp_per_capita,data_train)
 dev.new()
 pairs(~new_cases+cvd_death_rate+diabetes_prevalence+female_smokers+male_smokers,data_train)
 dev.new()
@@ -134,237 +156,108 @@ summary(adjlog.fit)
 dev.new()
 par(mfrow=c(2,2))
 plot(adjlog.fit)
-###############################################################################################################
-
-######################################################################################################################################################################
+########################################################################################################
 #BESTSUBSET SELECTION
 best.fit=regsubsets(new_cases~.,data_train,nvmax = 15)
 reg.summary=summary(best.fit)
 #PLOT TO CHOOSE THE BEST NUMBER OF PREDICTORS
-dev.new()
-par(mfrow=c(2,2))
-plot(reg.summary$rss ,xlab="Number of Variables ",ylab="RSS",type="l")
-points(which.min(reg.summary$rss),min(reg.summary$rss), col="red",cex=2,pch=20)
-plot(reg.summary$adjr2 ,xlab="Number of Variables ",
-     ylab="Adjusted RSq",type="l")
-points(which.max(reg.summary$adjr2),max(reg.summary$adjr2), col="red",cex=2,pch=20)
-plot(reg.summary$cp ,xlab="Number of Variables ",ylab="Cp", type="l")
-points(which.min(reg.summary$cp ),min(reg.summary$cp),col="red",cex=2,pch=20)
-plot(reg.summary$bic ,xlab="Number of Variables ",ylab="BIC",type="l")
-points(which.min(reg.summary$bic),min(reg.summary$bic),col="red",cex=2,pch=20)
-dev.new()
-plot(best.fit,scale="r2")
-dev.new()
-plot(best.fit,scale="adjr2")
-dev.new()
-plot(best.fit,scale="Cp")
-dev.new()
-plot(best.fit,scale="bic")
+plot_best_predictors(reg.summary,best.fit)
 
 #CHECK MIN ERROR ON VALIDATION SET
 test.mat=model.matrix(new_cases~.,data=data_validation)
-# Now we run a loop, and for each size i, we extract the coefficients 
-# from regfit.best for the best model of that size, 
-# multiply them into the appropriate columns of the test model matrix
-# to form the predictions, and compute the test MSE.
-val.errors=rep(NA,15)
-for(i in 1:15){
+val.errors=rep(NA,14)
+for(i in 1:14){
   coefi = coef(best.fit,id=i)
   pred = test.mat[,names(coefi)]%*%coefi
   val.errors[i] = mean((data_validation$new_cases-pred)^2)
 }
 # The best model is the one that contains which.min(val.errors) (ten in the book) variables.
 val.errors; which.min(val.errors) 
-coef(regfit.best,which.min(val.errors)) # This is based on training data
-# there is no predict() method for regsubsets(). 
-# Since we will be using this function again, we can capture our steps above and write our own predict method.
-predict.regsubsets = function(object,newdata,id,...){ # ... <-> ellipsis
-  form=as.formula(object$call[[2]])
-  mat=model.matrix(form, newdata)
-  coefi=coef(object, id=id)
-  xvars=names(coefi)
-  mat[,xvars]%*%coefi
-}
-# We will demonstrate how we use this function while performing test MSE estimation by cross-validation.
+min_error.best = coef(best.fit,which.min(val.errors)) # This is based on training data
 
 # BACKWARD SELECTION
 back.fit=regsubsets(data_train$new_cases~.,data_train,method = "backward",nvmax=15)
 back.summary=summary(back.fit)
-dev.new()
-par(mfrow=c(2,2))
-plot(back.summary$rss ,xlab="Number of Variables ",ylab="RSS",type="l")
-points(which.min(back.summary$rss),min(back.summary$rss), col="red",cex=2,pch=20)
-plot(back.summary$adjr2 ,xlab="Number of Variables ",
-     ylab="Adjusted RSq",type="l")
-points(which.max(back.summary$adjr2),max(back.summary$adjr2), col="red",cex=2,pch=20)
-plot(back.summary$cp ,xlab="Number of Variables ",ylab="Cp", type="l")
-points(which.min(back.summary$cp ),min(back.summary$cp),col="red",cex=2,pch=20)
-plot(back.summary$bic ,xlab="Number of Variables ",ylab="BIC",type="l")
-points(which.min(back.summary$bic),min(back.summary$bic),col="red",cex=2,pch=20)
-dev.new()
-plot(back.fit,scale="r2")
-dev.new()
-plot(back.fit,scale="adjr2")
-dev.new()
-plot(back.fit,scale="Cp")
-dev.new()
-plot(back.fit,scale="bic")
+plot_best_predictors(back.summary,back.fit)
+
+test.mat=model.matrix(new_cases~.,data=data_validation)
+val.errors=rep(NA,14)
+for(i in 1:14){
+  coefi = coef(back.fit,id=i)
+  pred = test.mat[,names(coefi)]%*%coefi
+  val.errors[i] = mean((data_validation$new_cases-pred)^2)
+}
+# The best model is the one that contains which.min(val.errors) (ten in the book) variables.
+val.errors; which.min(val.errors) 
+min_error.back = coef(back.fit,which.min(val.errors)) 
 
 # FORWARD SELECTION
 for.fit=regsubsets(data_train$new_cases~.,data_train,method = "forward",nvmax=15)
 for.summary=summary(for.fit)
-dev.new()
-par(mfrow=c(2,2))
-plot(for.summary$rss ,xlab="Number of Variables ",ylab="RSS",type="l")
-points(which.min(for.summary$rss),min(for.summary$rss), col="red",cex=2,pch=20)
-plot(for.summary$adjr2 ,xlab="Number of Variables ",
-     ylab="Adjusted RSq",type="l")
-points(which.max(for.summary$adjr2),max(for.summary$adjr2), col="red",cex=2,pch=20)
-plot(for.summary$cp ,xlab="Number of Variables ",ylab="Cp", type="l")
-points(which.min(for.summary$cp ),min(for.summary$cp),col="red",cex=2,pch=20)
-plot(for.summary$bic ,xlab="Number of Variables ",ylab="BIC",type="l")
-points(which.min(for.summary$bic),min(for.summary$bic),col="red",cex=2,pch=20)
-dev.new()
-plot(for.fit,scale="r2")
-dev.new()
-plot(for.fit,scale="adjr2")
-dev.new()
-plot(for.fit,scale="Cp")
-dev.new()
-plot(for.fit,scale="bic")
+plot_best_predictors(for.summary,for.fit)
 
+test.mat=model.matrix(new_cases~.,data=data_validation)
+val.errors=rep(NA,14)
+for(i in 1:14){
+  coefi = coef(for.fit,id=i)
+  pred = test.mat[,names(coefi)]%*%coefi
+  val.errors[i] = mean((data_validation$new_cases-pred)^2)
+}
+# The best model is the one that contains which.min(val.errors) (ten in the book) variables.
+val.errors; which.min(val.errors) 
+min_error.for = coef(for.fit,which.min(val.errors)) 
 
-#BESTSUBSET SELECTION LOG MODEL
-regfit.full=regsubsets(data_train$new_cases_per_million~.-aged_65_older-aged_70_older-gdp_per_capita-extreme_poverty-cvd_death_rate-diabetes_prevalence-female_smokers-male_smokers,data_train,nvmax = 6)
-reg.summary=summary(regfit.full)
-dev.new()
-par(mfrow=c(2,2))
-plot(reg.summary$rss ,xlab="Number of Variables ",ylab="RSS",type="l")
-points(which.min(reg.summary$rss),min(reg.summary$rss), col="red",cex=2,pch=20)
-plot(reg.summary$adjr2 ,xlab="Number of Variables ",
-     ylab="Adjusted RSq",type="l")
-points(which.max(reg.summary$adjr2),max(reg.summary$adjr2), col="red",cex=2,pch=20)
-plot(reg.summary$cp ,xlab="Number of Variables ",ylab="Cp", type="l")
-points(which.min(reg.summary$cp ),min(reg.summary$cp),col="red",cex=2,pch=20)
-plot(reg.summary$bic ,xlab="Number of Variables ",ylab="BIC",type="l")
-points(which.min(reg.summary$bic),min(reg.summary$bic),col="red",cex=2,pch=20)
-dev.new()
-plot(regfit.full,scale="r2")
-dev.new()
-plot(regfit.full,scale="adjr2")
-dev.new()
-plot(regfit.full,scale="Cp")
-dev.new()
-plot(regfit.full,scale="bic")
+######################################################################################################################################################################
+#BESTSUBSET SELECTION FOR LOG MODEL
+best.log.fit=regsubsets(new_cases~.,data_train.log,nvmax = 15)
+reg.summary.log=summary(best.log.fit)
+#PLOT TO CHOOSE THE BEST NUMBER OF PREDICTORS
+plot_best_predictors(reg.summary.log,best.log.fit)
 
+#CHECK MIN ERROR ON VALIDATION SET
+test.mat=model.matrix(new_cases~.,data=data_validation.log)
+val.errors=rep(NA,14)
+for(i in 1:14){
+  coefi = coef(best.log.fit,id=i)
+  pred = test.mat[,names(coefi)]%*%coefi
+  val.errors[i] = mean((data_validation$new_cases-pred)^2)
+}
+# The best model is the one that contains which.min(val.errors) (ten in the book) variables.
+val.errors; which.min(val.errors) 
+min_error.log.best = coef(best.log.fit,which.min(val.errors)) # This is based on training data
 
+# BACKWARD SELECTION FOR LOG MODEL
+back.log.fit=regsubsets(data_train$new_cases~.,data_train,method = "backward",nvmax=15)
+back.summary.log=summary(back.log.fit)
+plot_best_predictors(back.summary.log,back.log.fit)
 
-# BACKWARD SELECTION LOG MODEL
-regfit.full=regsubsets(data_train$new_cases~.,data_train,method = "backward")
-reg.summary=summary(regfit.full)
-dev.new()
-par(mfrow=c(2,2))
-plot(reg.summary$rss ,xlab="Number of Variables ",ylab="RSS",type="l")
-points(which.min(reg.summary$rss),min(reg.summary$rss), col="red",cex=2,pch=20)
-plot(reg.summary$adjr2 ,xlab="Number of Variables ",
-     ylab="Adjusted RSq",type="l")
-points(which.max(reg.summary$adjr2),max(reg.summary$adjr2), col="red",cex=2,pch=20)
-plot(reg.summary$cp ,xlab="Number of Variables ",ylab="Cp", type="l")
-points(which.min(reg.summary$cp ),min(reg.summary$cp),col="red",cex=2,pch=20)
-plot(reg.summary$bic ,xlab="Number of Variables ",ylab="BIC",type="l")
-points(which.min(reg.summary$bic),min(reg.summary$bic),col="red",cex=2,pch=20)
-dev.new()
-plot(regfit.full,scale="r2")
-dev.new()
-plot(regfit.full,scale="adjr2")
-dev.new()
-plot(regfit.full,scale="Cp")
-dev.new()
-plot(regfit.full,scale="bic")
+test.mat=model.matrix(new_cases~.,data=data_validation)
+val.errors=rep(NA,14)
+for(i in 1:14){
+  coefi = coef(back.log.fit,id=i)
+  pred = test.mat[,names(coefi)]%*%coefi
+  val.errors[i] = mean((data_validation$new_cases-pred)^2)
+}
+# The best model is the one that contains which.min(val.errors) (ten in the book) variables.
+val.errors; which.min(val.errors) 
+min_error.back.log = coef(back.log.fit,which.min(val.errors)) 
 
 # FORWARD SELECTION LOG MODEL
-regfit.full=regsubsets(data_train$new_cases_~.,data_train,method = "forward")
-reg.summary=summary(regfit.full)
-dev.new()
-par(mfrow=c(2,2))
-plot(reg.summary$rss ,xlab="Number of Variables ",ylab="RSS",type="l")
-points(which.min(reg.summary$rss),min(reg.summary$rss), col="red",cex=2,pch=20)
-plot(reg.summary$adjr2 ,xlab="Number of Variables ",
-     ylab="Adjusted RSq",type="l")
-points(which.max(reg.summary$adjr2),max(reg.summary$adjr2), col="red",cex=2,pch=20)
-plot(reg.summary$cp ,xlab="Number of Variables ",ylab="Cp", type="l")
-points(which.min(reg.summary$cp ),min(reg.summary$cp),col="red",cex=2,pch=20)
-plot(reg.summary$bic ,xlab="Number of Variables ",ylab="BIC",type="l")
-points(which.min(reg.summary$bic),min(reg.summary$bic),col="red",cex=2,pch=20)
-dev.new()
-plot(regfit.full,scale="r2")
-dev.new()
-plot(regfit.full,scale="adjr2")
-dev.new()
-plot(regfit.full,scale="Cp")
-dev.new()
-plot(regfit.full,scale="bic")
+for.log.fit=regsubsets(data_train$new_cases~.,data_train,method = "forward",nvmax=15)
+for.summary.log=summary(for.fit)
+plot_best_predictors(for.summary.log,for.log.fit)
 
-###model with 3 predictors
-regfit.3=regsubsets(data_train$new_cases_per_million~.,data_train,nvmax = 3)
-lm3 = lm(new_cases_per_million~new_tests_per_thousand+median_age+population, data_train) 
-lm3.log = lm(new_cases_per_million~+new_tests_per_thousand+median_age+population, data_train.log)
-dev.new()
-par(mfrow=c(2,2))
-#plot(lm3)
-plot(lm3.log)
-vif(lm3)
-vif(lm3.log)
+test.mat=model.matrix(new_cases~.,data=data_validation)
+val.errors=rep(NA,14)
+for(i in 1:14){
+  coefi = coef(for.fit,id=i)
+  pred = test.mat[,names(coefi)]%*%coefi
+  val.errors[i] = mean((data_validation$new_cases-pred)^2)
+}
+# The best model is the one that contains which.min(val.errors) (ten in the book) variables.
+val.errors; which.min(val.errors) 
+min_error.for.log = coef(for.fit,which.min(val.errors)) 
 
-# #model with 5 predictors per 5 
-# regfit.5=regsubsets(data_train$new_cases_per_million~.,data_train,nvmax = 5)
-# lm5 = lm(new_cases_per_million~total_tests_per_thousand+new_tests_per_thousand+diabetes_prevalence+stringency_index+median_age, data_train) 
-# lm5.log = lm(new_cases_per_million~total_tests_per_thousand+new_tests_per_thousand+diabetes_prevalence+stringency_index+median_age, data_train.log)
-# dev.new()
-# par(mfrow=c(2,2))
-# plot(lm5)
-# plot(lm5.log)
-# vif(lm5)
-# vif(lm5.log)
-
-###model with 4 predictors 
-# regfit.4=regsubsets(data_train$new_cases~.,data_train,nvmax = 4)
-# lm4 = lm(new_cases~total_tests+cvd_death_rate+male_smokers+new_tests,data_train)
-# lm4.log = lm(new_cases~total_tests+cvd_death_rate+male_smokers+new_tests,data_train.log)
-# lm4.sqrt = lm(new_cases~total_tests+cvd_death_rate+male_smokers+new_tests,data_train.sqrt)
-# dev.new()
-# par(mfrow=c(2,2))
-# plot(lm4)
-# plot(lm4.log)
-# plot(lm4.sqrt)
-# vif(lm4)
-# vif(lm4.log)
-# vif(lm4.sqrt)
-#model with 7 predictors
-# regfit.10=regsubsets(data_train$new_cases~.,data_train,nvmax = 10)
-# lm7.log = lm(new_cases~.-stringency_index-population_density-aged_65_older-cvd_death_rate-extreme_poverty-median_age-aged_70_older,data_train.log)
-# lm7= lm(new_cases~.-stringency_index-population_density-aged_65_older-cvd_death_rate-extreme_poverty-median_age-aged_70_older,data_train)
-# lm7.sqrt = lm(new_cases~.-stringency_index-population_density-aged_65_older-cvd_death_rate-extreme_poverty-median_age-aged_70_older,data_train.sqrt)
-# dev.new()
-# par(mfrow=c(2,2))
-# plot(lm7)
-# plot(lm7.log)
-# plot(lm7.sqrt)
-# vif(lm7)
-# vif(lm7.log)
-# vif(lm7.sqrt)
-# #model with 10 predictors
-# lm10.log = lm(new_cases~.-stringency_index-population_density-aged_65_older-cvd_death_rate,data_train.log)
-# lm10= lm(new_cases~.-stringency_index-population_density-aged_65_older-cvd_death_rate,data_train)
-# lm10.sqrt = lm(new_cases~.-stringency_index-population_density-aged_65_older-cvd_death_rate,data_train.sqrt)
-# dev.new()
-# par(mfrow=c(2,2))
-# plot(lm10)
-# plot(lm10.log)
-# plot(lm10.sqrt)
-# vif(lm10)
-# vif(lm10.log)
-# vif(lm10.sqrt)
 
 
 #variable selection with Ridge Regression and the Lasso
