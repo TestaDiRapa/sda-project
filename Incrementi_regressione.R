@@ -2,17 +2,21 @@ library(leaps)
 library(car)
 library(glmnet)
 library(ggplot2)
-setwd("/Users/vincenzo/Documents/GitHub/sda-project")
+path_a="/Users/Antonio/Documents/GitHub/sda-project"
+path_v="/Users/vincenzo/Documents/GitHub/sda-project"
+setwd(path_a)
 
 open_dataset <- function(iso_codes, dates=FALSE) {
   df.data <- read.csv('covid-data.csv')
   if(dates) {
-    columns <- colnames(df.data)[c(1,4,10,15,16,20,21,22,23,24,25,26,27,28,29,30,31)]
+    columns <- colnames(df.data)[c(1,4,9,10,15,16,20,21,22,23,24,25,26,28,29,30,31)]
   } else {
-    columns <- colnames(df.data)[c(1,10,15,16,20,21,22,23,24,25,26,27,28,29,30,31)]
+    columns <- colnames(df.data)[c(1,9,10,15,16,20,21,22,23,24,25,26,28,29,30,31)]
   }
   df.data <- df.data[which(df.data$iso_code %in% iso_codes), columns]
   df.data <- na.omit(df.data)
+  df.data$new_cases <- df.data$new_cases_per_million
+  df.data$new_cases_per_million <- NULL
   df.data$total_cases <- df.data$total_cases_per_million
   df.data$total_cases_per_million <- NULL
   df.data$new_tests <- df.data$new_tests_per_thousand
@@ -26,6 +30,7 @@ open_dataset <- function(iso_codes, dates=FALSE) {
   }
   df.data$actual_cases <- actual_cases
   df.data$iso_code <- NULL
+  df.data$total_cases <- NULL
   return(df.data)
 }
 ############################################################################################################
@@ -37,10 +42,13 @@ data_validation = open_dataset(c('RUS','TUR','DNK'))
 #CONVERT DATA FROM LINEAR RESPONSE TO LOG RESPONSE
 data_train.log <- data_train
 data_train.log$new_cases <- log(data_train$new_cases + 0.1)
+data_train.log$actual_cases = log(data_train$actual_cases + 0.1)
 data_test.log <- data_test
 data_test.log$new_cases <- log(data_test$new_cases + 0.1)
+data_test.log$actual_cases = log(data_test$actual_cases + 0.1)
 data_validation.log <- data_validation
 data_validation.log$new_cases <- log(data_validation$new_cases + 0.1)
+data_validation.log$actual_cases = log(data_validation$actual_cases + 0.1)
 #############################################################################################################
 
 
@@ -75,6 +83,15 @@ abline(h = 4/sample_size, col="red")  # add cutoff line
 text(x=1:length(cooksd)+1, y=cooksd, labels=ifelse(cooksd>4/sample_size, names(cooksd),""), col="red")  # add labels
 influential <- as.numeric(names(cooksd)[(cooksd > (4/sample_size))])
 data_train = data_train[which(!(rownames(data_train) %in% influential)),]
+# FITTING LINEAR MODEL WITHOUT ININFLUENT POINTS
+fit = lm(new_cases~.,data_train)
+summary(fit)
+# model diagnositic plots
+dev.new()
+par(mfrow=c(2,2))
+plot(fit)
+
+
 
 # FITTING LINEAR MODEL (LOG OF RESPONSE)
 log.fit = lm(new_cases~.,data_train.log)
@@ -93,11 +110,17 @@ abline(h = 4/sample_size, col="red")  # add cutoff line
 text(x=1:length(cooksd)+1, y=cooksd, labels=ifelse(cooksd>4/sample_size, names(cooksd),""), col="red")  # add labels
 influential <- as.numeric(names(cooksd)[(cooksd > (4/sample_size))])
 data_train.log = data_train.log[which(!(rownames(data_train.log) %in% influential)),]
+log.fit = lm(new_cases~.,data_train.log)
+summary(log.fit)
+# model diagnositic plots
+dev.new()
+par(mfrow=c(2,2))
+plot(log.fit)
 ########################################################################################################
 
 #######################################################################################################
 #Refit the model with only the significant predictors
-adj.fit = lm(new_cases_per_million~.-aged_65_older-aged_70_older-gdp_per_capita-extreme_poverty-cvd_death_rate-diabetes_prevalence-female_smokers-male_smokers,data_train)
+adj.fit = lm(new_cases~.-female_smokers-diabetes_prevalence-aged_70_older-cvd_death_rate,data_train)
 summary(adj.fit)
 # model diagnositic plots
 dev.new()
@@ -105,7 +128,7 @@ par(mfrow=c(2,2))
 plot(adj.fit)
 
 # Refit the log model with only the significant predictors
-adjlog.fit = lm(new_cases_per_million~.-aged_65_older-aged_70_older-gdp_per_capita-extreme_poverty-cvd_death_rate-diabetes_prevalence-female_smokers-male_smokers,data_train.log)
+adjlog.fit = lm(new_cases~.-female_smokers-actual_cases,data_train.log)
 summary(adjlog.fit)
 # model diagnositic plots
 dev.new()
@@ -115,7 +138,7 @@ plot(adjlog.fit)
 
 ######################################################################################################################################################################
 #BESTSUBSET SELECTION
-best.fit=regsubsets(data_train$new_cases_per_million~.-aged_65_older-aged_70_older-gdp_per_capita-extreme_poverty-cvd_death_rate-diabetes_prevalence-female_smokers-male_smokers,data_train,nvmax = 6)
+best.fit=regsubsets(new_cases~.,data_train,nvmax = 15)
 reg.summary=summary(best.fit)
 #PLOT TO CHOOSE THE BEST NUMBER OF PREDICTORS
 dev.new()
@@ -138,10 +161,34 @@ plot(best.fit,scale="Cp")
 dev.new()
 plot(best.fit,scale="bic")
 
-
+#CHECK MIN ERROR ON VALIDATION SET
+test.mat=model.matrix(new_cases~.,data=data_validation)
+# Now we run a loop, and for each size i, we extract the coefficients 
+# from regfit.best for the best model of that size, 
+# multiply them into the appropriate columns of the test model matrix
+# to form the predictions, and compute the test MSE.
+val.errors=rep(NA,15)
+for(i in 1:15){
+  coefi = coef(best.fit,id=i)
+  pred = test.mat[,names(coefi)]%*%coefi
+  val.errors[i] = mean((data_validation$new_cases-pred)^2)
+}
+# The best model is the one that contains which.min(val.errors) (ten in the book) variables.
+val.errors; which.min(val.errors) 
+coef(regfit.best,which.min(val.errors)) # This is based on training data
+# there is no predict() method for regsubsets(). 
+# Since we will be using this function again, we can capture our steps above and write our own predict method.
+predict.regsubsets = function(object,newdata,id,...){ # ... <-> ellipsis
+  form=as.formula(object$call[[2]])
+  mat=model.matrix(form, newdata)
+  coefi=coef(object, id=id)
+  xvars=names(coefi)
+  mat[,xvars]%*%coefi
+}
+# We will demonstrate how we use this function while performing test MSE estimation by cross-validation.
 
 # BACKWARD SELECTION
-back.fit=regsubsets(data_train$new_cases~.,data_train,method = "backward")
+back.fit=regsubsets(data_train$new_cases~.,data_train,method = "backward",nvmax=15)
 back.summary=summary(back.fit)
 dev.new()
 par(mfrow=c(2,2))
@@ -164,7 +211,7 @@ dev.new()
 plot(back.fit,scale="bic")
 
 # FORWARD SELECTION
-for.fit=regsubsets(data_train$new_cases_~.,data_train,method = "forward")
+for.fit=regsubsets(data_train$new_cases~.,data_train,method = "forward",nvmax=15)
 for.summary=summary(for.fit)
 dev.new()
 par(mfrow=c(2,2))
