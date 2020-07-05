@@ -31,27 +31,33 @@ open_dataset <- function(iso_codes, dates=FALSE) {
 data_train = open_dataset(c('ITA', 'GBR', 'IND', 'JPN', 'ISR', 'LUX', 'AUS', 'AUT', 'NZL', 'ARG', 'BEL', 'CAN', 'ZAF', 'PRT','ISL','CHE'))
 data_test = open_dataset( c('USA','IRN','KOR','URY'))
 data_validation = open_dataset(c('RUS','TUR','DNK'))
-#REMOVE NA FROM DATA
-data_train = na.omit(data_train)
-data_test = na.omit(data_test)
-data_validation = na.omit(data_validation)
 
 #CONVERT DATA FROM LINEAR RESPONSE TO LOG RESPONSE
 data_train.log <- data_train
-data_train.log$new_cases_per_million <- log(data_train.log$new_cases_per_million + 0.1)
+data_train.log$new_cases <- log(data_train$new_cases + 0.1)
 data_test.log <- data_test
-data_test.log$new_cases_per_million <- log(data_test.log$new_cases_per_million + 0.1)
+data_test.log$new_cases <- log(data_test$new_cases + 0.1)
 data_validation.log <- data_validation
-data_validation.log$new_cases_per_million <- log(data_validation.log$new_cases_per_million + 0.1)
+data_validation.log$new_cases <- log(data_validation$new_cases + 0.1)
 #############################################################################################################
 
 
 ###############################################################################################################
 #CHECK DEPENDENCY
-pairs(data_train)
-# fit a linear model with all predictors (no changes in the response)
+dev.new()
+pairs(~new_cases+stringency_index+population_density+median_age+population,data_train)
+dev.new()
+pairs(~new_cases+aged_65_older+aged_70_older+gdp_per_capita+extreme_poverty,data_train)
+dev.new()
+pairs(~new_cases+cvd_death_rate+diabetes_prevalence+female_smokers+male_smokers,data_train)
+dev.new()
+pairs(~new_cases+new_tests+total_tests+actual_cases,data_train)
+#############################################################################################
+
+########################################################################################################
+# FITTING LINEAR MODEL
 fit = lm(new_cases_per_million~.,data_train)
-#fit = lm(new_cases~.,data_train)
+
 summary(fit)
 # model diagnositic plots
 dev.new()
