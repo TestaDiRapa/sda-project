@@ -6,24 +6,26 @@ setwd("/Users/vincenzo/Documents/GitHub/sda-project")
 
 open_dataset <- function(iso_codes, dates=FALSE) {
   df.data <- read.csv('covid-data.csv')
-  df.data <- df.data[-c(11654,11743,11747,11748,11749,11736),]
-  columns <-
-    if(dates) {
-      columns <- colnames(df.data)[c(4,10,15,16,20,21,22,23,24,25,26,27,28,29,30,31)]
-    } else {
-      columns <- colnames(df.data)[c(10,15,16,20,21,22,23,24,25,26,27,28,29,30,31)]
-    }
+  if(dates) {
+    columns <- colnames(df.data)[c(1,4,10,15,16,20,21,22,23,24,25,26,27,28,29,30,31)]
+  } else {
+    columns <- colnames(df.data)[c(1,10,15,16,20,21,22,23,24,25,26,27,28,29,30,31)]
+  }
   df.data <- df.data[which(df.data$iso_code %in% iso_codes), columns]
   df.data <- na.omit(df.data)
-  df.data$new_cases <- df.data$new_cases_per_million
-  df.data$new_cases_per_million <- NULL
+  df.data$total_cases <- df.data$total_cases_per_million
+  df.data$total_cases_per_million <- NULL
   df.data$new_tests <- df.data$new_tests_per_thousand
   df.data$new_tests_per_thousand <- NULL
   df.data$total_tests <- df.data$total_tests_per_thousand
   df.data$total_tests_per_thousand <- NULL
-  actual_cases <- df.data$total_cases
-  actual_cases <- c(0, actual_cases[1:length(actual_cases)-1])
+  actual_cases <- c()
+  for(code in iso_codes) {
+    tmp_actual <- df.data[df.data$iso_code == code,'total_cases']
+    actual_cases <- c(actual_cases, 0, tmp_actual[1:length(tmp_actual)-1])
+  }
   df.data$actual_cases <- actual_cases
+  df.data$iso_code <- NULL
   return(df.data)
 }
 ############################################################################################################
@@ -55,25 +57,45 @@ pairs(~new_cases+new_tests+total_tests+actual_cases,data_train)
 #############################################################################################
 
 ########################################################################################################
-# FITTING LINEAR MODEL
-fit = lm(new_cases_per_million~.,data_train)
-
+# FITTING LINEAR MODEL 
+fit = lm(new_cases~.,data_train)
 summary(fit)
 # model diagnositic plots
 dev.new()
 par(mfrow=c(2,2))
 plot(fit)
 
-# fit a linear model with all predictors (log of the response)
-data_train.log <- data_train
-data_train.log$new_cases_per_million <- log(data_train.log$new_cases_per_million + 0.1)
-log.fit = lm(new_cases_per_million~.,data_train.log)
+#REMOVE ININFLUENTIAL POINTS
+cooksd <- cooks.distance(fit)
+
+# Plot the Cook's Distance using the traditional 4/n criterion
+sample_size <- nrow(data_train)
+plot(cooksd, pch="*", cex=2, main="Influential Obs by Cooks distance")  # plot cook's distance
+abline(h = 4/sample_size, col="red")  # add cutoff line
+text(x=1:length(cooksd)+1, y=cooksd, labels=ifelse(cooksd>4/sample_size, names(cooksd),""), col="red")  # add labels
+influential <- as.numeric(names(cooksd)[(cooksd > (4/sample_size))])
+data_train = data_train[which(!(rownames(data_train) %in% influential)),]
+
+# FITTING LINEAR MODEL (LOG OF RESPONSE)
+log.fit = lm(new_cases~.,data_train.log)
 summary(log.fit)
 # model diagnositic plots
 dev.new()
 par(mfrow=c(2,2))
 plot(log.fit)
 
+#REMOVE ININFLUENTIAL POINTS
+cooksd <- cooks.distance(log.fit)
+# Plot the Cook's Distance using the traditional 4/n criterion
+sample_size <- nrow(data_train.log)
+plot(cooksd, pch="*", cex=2, main="Influential Obs by Cooks distance")  # plot cook's distance
+abline(h = 4/sample_size, col="red")  # add cutoff line
+text(x=1:length(cooksd)+1, y=cooksd, labels=ifelse(cooksd>4/sample_size, names(cooksd),""), col="red")  # add labels
+influential <- as.numeric(names(cooksd)[(cooksd > (4/sample_size))])
+data_train.log = data_train.log[which(!(rownames(data_train.log) %in% influential)),]
+########################################################################################################
+
+#######################################################################################################
 #Refit the model with only the significant predictors
 adj.fit = lm(new_cases_per_million~.-aged_65_older-aged_70_older-gdp_per_capita-extreme_poverty-cvd_death_rate-diabetes_prevalence-female_smokers-male_smokers,data_train)
 summary(adj.fit)
@@ -82,18 +104,139 @@ dev.new()
 par(mfrow=c(2,2))
 plot(adj.fit)
 
-# fit a linear model with only the significant predictors (log of the response)
-data_train.log <- data_train
-data_train.log$new_cases_per_million <- log(data_train.log$new_cases_per_million + 0.1)
+# Refit the log model with only the significant predictors
 adjlog.fit = lm(new_cases_per_million~.-aged_65_older-aged_70_older-gdp_per_capita-extreme_poverty-cvd_death_rate-diabetes_prevalence-female_smokers-male_smokers,data_train.log)
 summary(adjlog.fit)
 # model diagnositic plots
 dev.new()
 par(mfrow=c(2,2))
 plot(adjlog.fit)
+###############################################################################################################
 
+######################################################################################################################################################################
 #BESTSUBSET SELECTION
+best.fit=regsubsets(data_train$new_cases_per_million~.-aged_65_older-aged_70_older-gdp_per_capita-extreme_poverty-cvd_death_rate-diabetes_prevalence-female_smokers-male_smokers,data_train,nvmax = 6)
+reg.summary=summary(best.fit)
+#PLOT TO CHOOSE THE BEST NUMBER OF PREDICTORS
+dev.new()
+par(mfrow=c(2,2))
+plot(reg.summary$rss ,xlab="Number of Variables ",ylab="RSS",type="l")
+points(which.min(reg.summary$rss),min(reg.summary$rss), col="red",cex=2,pch=20)
+plot(reg.summary$adjr2 ,xlab="Number of Variables ",
+     ylab="Adjusted RSq",type="l")
+points(which.max(reg.summary$adjr2),max(reg.summary$adjr2), col="red",cex=2,pch=20)
+plot(reg.summary$cp ,xlab="Number of Variables ",ylab="Cp", type="l")
+points(which.min(reg.summary$cp ),min(reg.summary$cp),col="red",cex=2,pch=20)
+plot(reg.summary$bic ,xlab="Number of Variables ",ylab="BIC",type="l")
+points(which.min(reg.summary$bic),min(reg.summary$bic),col="red",cex=2,pch=20)
+dev.new()
+plot(best.fit,scale="r2")
+dev.new()
+plot(best.fit,scale="adjr2")
+dev.new()
+plot(best.fit,scale="Cp")
+dev.new()
+plot(best.fit,scale="bic")
+
+
+
+# BACKWARD SELECTION
+back.fit=regsubsets(data_train$new_cases~.,data_train,method = "backward")
+back.summary=summary(back.fit)
+dev.new()
+par(mfrow=c(2,2))
+plot(back.summary$rss ,xlab="Number of Variables ",ylab="RSS",type="l")
+points(which.min(back.summary$rss),min(back.summary$rss), col="red",cex=2,pch=20)
+plot(back.summary$adjr2 ,xlab="Number of Variables ",
+     ylab="Adjusted RSq",type="l")
+points(which.max(back.summary$adjr2),max(back.summary$adjr2), col="red",cex=2,pch=20)
+plot(back.summary$cp ,xlab="Number of Variables ",ylab="Cp", type="l")
+points(which.min(back.summary$cp ),min(back.summary$cp),col="red",cex=2,pch=20)
+plot(back.summary$bic ,xlab="Number of Variables ",ylab="BIC",type="l")
+points(which.min(back.summary$bic),min(back.summary$bic),col="red",cex=2,pch=20)
+dev.new()
+plot(back.fit,scale="r2")
+dev.new()
+plot(back.fit,scale="adjr2")
+dev.new()
+plot(back.fit,scale="Cp")
+dev.new()
+plot(back.fit,scale="bic")
+
+# FORWARD SELECTION
+for.fit=regsubsets(data_train$new_cases_~.,data_train,method = "forward")
+for.summary=summary(for.fit)
+dev.new()
+par(mfrow=c(2,2))
+plot(for.summary$rss ,xlab="Number of Variables ",ylab="RSS",type="l")
+points(which.min(for.summary$rss),min(for.summary$rss), col="red",cex=2,pch=20)
+plot(for.summary$adjr2 ,xlab="Number of Variables ",
+     ylab="Adjusted RSq",type="l")
+points(which.max(for.summary$adjr2),max(for.summary$adjr2), col="red",cex=2,pch=20)
+plot(for.summary$cp ,xlab="Number of Variables ",ylab="Cp", type="l")
+points(which.min(for.summary$cp ),min(for.summary$cp),col="red",cex=2,pch=20)
+plot(for.summary$bic ,xlab="Number of Variables ",ylab="BIC",type="l")
+points(which.min(for.summary$bic),min(for.summary$bic),col="red",cex=2,pch=20)
+dev.new()
+plot(for.fit,scale="r2")
+dev.new()
+plot(for.fit,scale="adjr2")
+dev.new()
+plot(for.fit,scale="Cp")
+dev.new()
+plot(for.fit,scale="bic")
+
+
+#BESTSUBSET SELECTION LOG MODEL
 regfit.full=regsubsets(data_train$new_cases_per_million~.-aged_65_older-aged_70_older-gdp_per_capita-extreme_poverty-cvd_death_rate-diabetes_prevalence-female_smokers-male_smokers,data_train,nvmax = 6)
+reg.summary=summary(regfit.full)
+dev.new()
+par(mfrow=c(2,2))
+plot(reg.summary$rss ,xlab="Number of Variables ",ylab="RSS",type="l")
+points(which.min(reg.summary$rss),min(reg.summary$rss), col="red",cex=2,pch=20)
+plot(reg.summary$adjr2 ,xlab="Number of Variables ",
+     ylab="Adjusted RSq",type="l")
+points(which.max(reg.summary$adjr2),max(reg.summary$adjr2), col="red",cex=2,pch=20)
+plot(reg.summary$cp ,xlab="Number of Variables ",ylab="Cp", type="l")
+points(which.min(reg.summary$cp ),min(reg.summary$cp),col="red",cex=2,pch=20)
+plot(reg.summary$bic ,xlab="Number of Variables ",ylab="BIC",type="l")
+points(which.min(reg.summary$bic),min(reg.summary$bic),col="red",cex=2,pch=20)
+dev.new()
+plot(regfit.full,scale="r2")
+dev.new()
+plot(regfit.full,scale="adjr2")
+dev.new()
+plot(regfit.full,scale="Cp")
+dev.new()
+plot(regfit.full,scale="bic")
+
+
+
+# BACKWARD SELECTION LOG MODEL
+regfit.full=regsubsets(data_train$new_cases~.,data_train,method = "backward")
+reg.summary=summary(regfit.full)
+dev.new()
+par(mfrow=c(2,2))
+plot(reg.summary$rss ,xlab="Number of Variables ",ylab="RSS",type="l")
+points(which.min(reg.summary$rss),min(reg.summary$rss), col="red",cex=2,pch=20)
+plot(reg.summary$adjr2 ,xlab="Number of Variables ",
+     ylab="Adjusted RSq",type="l")
+points(which.max(reg.summary$adjr2),max(reg.summary$adjr2), col="red",cex=2,pch=20)
+plot(reg.summary$cp ,xlab="Number of Variables ",ylab="Cp", type="l")
+points(which.min(reg.summary$cp ),min(reg.summary$cp),col="red",cex=2,pch=20)
+plot(reg.summary$bic ,xlab="Number of Variables ",ylab="BIC",type="l")
+points(which.min(reg.summary$bic),min(reg.summary$bic),col="red",cex=2,pch=20)
+dev.new()
+plot(regfit.full,scale="r2")
+dev.new()
+plot(regfit.full,scale="adjr2")
+dev.new()
+plot(regfit.full,scale="Cp")
+dev.new()
+plot(regfit.full,scale="bic")
+
+# FORWARD SELECTION LOG MODEL
+regfit.full=regsubsets(data_train$new_cases_~.,data_train,method = "forward")
 reg.summary=summary(regfit.full)
 dev.new()
 par(mfrow=c(2,2))
