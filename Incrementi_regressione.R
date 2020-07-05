@@ -156,6 +156,15 @@ summary(adj.fit)
 dev.new()
 par(mfrow=c(2,2))
 plot(adj.fit)
+vif(adj.fit)
+
+adj.fit = lm(new_cases~.-female_smokers-diabetes_prevalence-aged_70_older-cvd_death_rate-median_age-aged_65_older,data_train)
+summary(adj.fit)
+# model diagnositic plots
+dev.new()
+par(mfrow=c(2,2))
+plot(adj.fit)
+
 #REFIT LINEAR MODEL (LOG RESPONSE) WITH ONLY SIGNFICANT PREDICTORS#########
 adjlog.fit = lm(new_cases~.-female_smokers-actual_cases,data_train.log)
 summary(adjlog.fit)
@@ -163,7 +172,15 @@ summary(adjlog.fit)
 dev.new()
 par(mfrow=c(2,2))
 plot(adjlog.fit)
+vif(adjlog.fit)
 
+#REFIT LINEAR MODEL (LOG RESPONSE) WITH ONLY SIGNFICANT PREDICTORS#########
+adjlog.fit = lm(new_cases~.-female_smokers-actual_cases-population-population_density-median_age-aged_65_older-aged_70_older-cvd_death_rate,data_train.log)
+summary(adjlog.fit)
+# model diagnositic plots
+dev.new()
+par(mfrow=c(2,2))
+plot(adjlog.fit)
 #BEST SUBSET SELECTION#######
 best.fit=regsubsets(new_cases~.,data_train,nvmax = 15)
 reg.summary=summary(best.fit)
@@ -182,9 +199,8 @@ coef(best.fit,which.min(val.errors)) # This is based on training data
 
 best.fit = lm(new_cases~stringency_index+population+median_age+gdp_per_capita+total_cases+new_tests+total_tests,data_train)
 
-best.fit.poly =lm(new_cases~population+median_age+gdp_per_capita+total_cases+total_tests+new_tests+poly(stringency_index*actual_cases,5),data_train)
 
-# BACKWARD SELECTION
+# BACKWARD SELECTION ((((((((((((((((((DA QUI))))))))))))))))))
 back.fit=regsubsets(data_train$new_cases~.,data_train,method = "backward",nvmax=15)
 back.summary=summary(back.fit)
 plot_best_predictors(back.summary,back.fit)
@@ -196,7 +212,7 @@ for(i in 1:14){
   pred = test.mat[,names(coefi)]%*%coefi
   val.errors[i] = mean((data_validation$new_cases-pred)^2)
 }
-# The best model is the one that contains which.min(val.errors) (ten in the book) variables.
+
 val.errors; which.min(val.errors) 
 min_error.back = coef(back.fit,which.min(val.errors)) 
 
