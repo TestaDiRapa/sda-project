@@ -1,4 +1,4 @@
-####################################################################################################
+#LOAD LIBRARIES AND DEFINE FUNCTIONS##############################
 library(leaps)
 library(car)
 library(glmnet)
@@ -6,8 +6,7 @@ library(ggplot2)
 path_a="/Users/Antonio/Documents/GitHub/sda-project"
 path_v="/Users/vincenzo/Documents/GitHub/sda-project"
 setwd(path_a)
-
-open_dataset <- function(iso_codes, dates=FALSE) {
+open_dataset <- function(iso_codes, dates=FALSE, iso=FALSE) {
   df.data <- read.csv('covid-data.csv')
   if(dates) {
     columns <- colnames(df.data)[c(1,4,9,10,15,16,20,21,22,23,24,25,26,28,29,30,31)]
@@ -16,10 +15,10 @@ open_dataset <- function(iso_codes, dates=FALSE) {
   }
   df.data <- df.data[which(df.data$iso_code %in% iso_codes), columns]
   df.data <- na.omit(df.data)
-  df.data$new_cases <- df.data$new_cases_per_million
-  df.data$new_cases_per_million <- NULL
   df.data$total_cases <- df.data$total_cases_per_million
   df.data$total_cases_per_million <- NULL
+  df.data$new_cases <- df.data$new_cases_per_million
+  df.data$new_cases_per_million <- NULL
   df.data$new_tests <- df.data$new_tests_per_thousand
   df.data$new_tests_per_thousand <- NULL
   df.data$total_tests <- df.data$total_tests_per_thousand
@@ -30,8 +29,9 @@ open_dataset <- function(iso_codes, dates=FALSE) {
     actual_cases <- c(actual_cases, 0, tmp_actual[1:length(tmp_actual)-1])
   }
   df.data$actual_cases <- actual_cases
-  df.data$iso_code <- NULL
-  df.data$total_cases <- NULL
+  if(!iso) {
+    df.data$iso_code <- NULL
+  }
   return(df.data)
 }
 plot_best_predictors = function(summary,fit){
@@ -55,14 +55,26 @@ plot_best_predictors = function(summary,fit){
   dev.new()
   plot(fit,scale="bic")
 }
-#############################################################################################################
-############################################################################################################
-###LOAD THE DATA FROM THE CSV
-data_train = open_dataset(c('ITA', 'GBR', 'IND', 'JPN', 'ISR', 'LUX', 'AUS', 'AUT', 'NZL', 'ARG', 'BEL', 'CAN', 'ZAF', 'PRT','ISL','CHE'))
-data_test = open_dataset( c('USA','IRN','KOR','URY'))
-data_validation = open_dataset(c('RUS','TUR','DNK'))
+test_country <- function(df.test, iso, model) {
+  df.test <- df.test[df.test$iso_code == iso,]
+  to.plot <- data.frame(y_real = df.test$new_cases, date = df.test$date)
+  df.test$new_cases <- NULL
+  df.test$date <- NULL
+  to.plot$y_pred <- predict(model, newdata=df.test)
+  print(mean((to.plot$y_real-to.plot$y_pred)^2))
+  plot <- ggplot(to.plot, aes(x=date)) +
+    geom_line(aes(y=y_real, group=1)) +
+    geom_line(aes(y=y_pred, group=2), color='red')
+  print(plot)
+}
 
-#CONVERT DATA FROM LINEAR RESPONSE TO LOG RESPONSE
+
+
+#LOAD DATA##################
+data_train = open_dataset(c('ITA', 'GBR', 'IND', 'JPN', 'ISR', 'LUX', 'AUS', 'AUT', 'NZL', 'ARG', 'BEL', 'CAN', 'ZAF', 'PRT','ISL','CHE'))
+data_test = open_dataset( c('USA','IRN','KOR','URY'),TRUE,TRUE)
+data_validation = open_dataset(c('RUS','TUR','DNK'))
+#CONVERT DATA TO LOG RESPONSE#############################################
 data_train.log <- data_train
 data_train.log$new_cases <- log(data_train$new_cases + 0.1)
 data_train.log$actual_cases = log(data_train$actual_cases + 0.1)
@@ -72,10 +84,9 @@ data_test.log$actual_cases = log(data_test$actual_cases + 0.1)
 data_validation.log <- data_validation
 data_validation.log$new_cases <- log(data_validation$new_cases + 0.1)
 data_validation.log$actual_cases = log(data_validation$actual_cases + 0.1)
-#############################################################################################################
 
-###############################################################################################################
-#CHECK DEPENDENCY
+
+#CHECK DEPENDENCIES###################################
 dev.new()
 pairs(~new_cases+stringency_index+population_density+median_age+population,data_train)
 dev.new()
@@ -84,10 +95,8 @@ dev.new()
 pairs(~new_cases+cvd_death_rate+diabetes_prevalence+female_smokers+male_smokers,data_train)
 dev.new()
 pairs(~new_cases+new_tests+total_tests+actual_cases,data_train)
-#############################################################################################
 
-########################################################################################################
-# FITTING LINEAR MODEL 
+#FITTING LINEAR MODEL#########################
 fit = lm(new_cases~.,data_train)
 summary(fit)
 # model diagnositic plots
@@ -95,9 +104,9 @@ dev.new()
 par(mfrow=c(2,2))
 plot(fit)
 
+
 #REMOVE ININFLUENTIAL POINTS
 cooksd <- cooks.distance(fit)
-
 # Plot the Cook's Distance using the traditional 4/n criterion
 sample_size <- nrow(data_train)
 plot(cooksd, pch="*", cex=2, main="Influential Obs by Cooks distance")  # plot cook's distance
@@ -105,6 +114,8 @@ abline(h = 4/sample_size, col="red")  # add cutoff line
 text(x=1:length(cooksd)+1, y=cooksd, labels=ifelse(cooksd>4/sample_size, names(cooksd),""), col="red")  # add labels
 influential <- as.numeric(names(cooksd)[(cooksd > (4/sample_size))])
 data_train = data_train[which(!(rownames(data_train) %in% influential)),]
+
+
 # FITTING LINEAR MODEL WITHOUT ININFLUENT POINTS
 fit = lm(new_cases~.,data_train)
 summary(fit)
@@ -112,10 +123,7 @@ summary(fit)
 dev.new()
 par(mfrow=c(2,2))
 plot(fit)
-
-
-
-# FITTING LINEAR MODEL (LOG OF RESPONSE)
+#FITTING LINEAR MODEL LOG OF RESPONSE######################################
 log.fit = lm(new_cases~.,data_train.log)
 summary(log.fit)
 # model diagnositic plots
@@ -132,37 +140,35 @@ abline(h = 4/sample_size, col="red")  # add cutoff line
 text(x=1:length(cooksd)+1, y=cooksd, labels=ifelse(cooksd>4/sample_size, names(cooksd),""), col="red")  # add labels
 influential <- as.numeric(names(cooksd)[(cooksd > (4/sample_size))])
 data_train.log = data_train.log[which(!(rownames(data_train.log) %in% influential)),]
+
+
 log.fit = lm(new_cases~.,data_train.log)
 summary(log.fit)
 # model diagnositic plots
 dev.new()
 par(mfrow=c(2,2))
 plot(log.fit)
-########################################################################################################
 
-#######################################################################################################
-#Refit the model with only the significant predictors
+#REFIT LINEAR MODEL WITH ONLY SIGNFICANT PREDICTORS###################
 adj.fit = lm(new_cases~.-female_smokers-diabetes_prevalence-aged_70_older-cvd_death_rate,data_train)
 summary(adj.fit)
 # model diagnositic plots
 dev.new()
 par(mfrow=c(2,2))
 plot(adj.fit)
-
-# Refit the log model with only the significant predictors
+#REFIT LINEAR MODEL (LOG RESPONSE) WITH ONLY SIGNFICANT PREDICTORS#########
 adjlog.fit = lm(new_cases~.-female_smokers-actual_cases,data_train.log)
 summary(adjlog.fit)
 # model diagnositic plots
 dev.new()
 par(mfrow=c(2,2))
 plot(adjlog.fit)
-########################################################################################################
-#BESTSUBSET SELECTION
+
+#BEST SUBSET SELECTION#######
 best.fit=regsubsets(new_cases~.,data_train,nvmax = 15)
 reg.summary=summary(best.fit)
 #PLOT TO CHOOSE THE BEST NUMBER OF PREDICTORS
 plot_best_predictors(reg.summary,best.fit)
-
 #CHECK MIN ERROR ON VALIDATION SET
 test.mat=model.matrix(new_cases~.,data=data_validation)
 val.errors=rep(NA,14)
@@ -171,9 +177,12 @@ for(i in 1:14){
   pred = test.mat[,names(coefi)]%*%coefi
   val.errors[i] = mean((data_validation$new_cases-pred)^2)
 }
-# The best model is the one that contains which.min(val.errors) (ten in the book) variables.
 val.errors; which.min(val.errors) 
-min_error.best = coef(best.fit,which.min(val.errors)) # This is based on training data
+coef(best.fit,which.min(val.errors)) # This is based on training data
+
+best.fit = lm(new_cases~stringency_index+population+median_age+gdp_per_capita+total_cases+new_tests+total_tests,data_train)
+
+best.fit.poly =lm(new_cases~population+median_age+gdp_per_capita+total_cases+total_tests+new_tests+poly(stringency_index*actual_cases,5),data_train)
 
 # BACKWARD SELECTION
 back.fit=regsubsets(data_train$new_cases~.,data_train,method = "backward",nvmax=15)
@@ -356,18 +365,3 @@ predict(out,type="coefficients",s=bestlam)[1:20,]
 dev.new()
 plot(out,label = T, xvar = "lambda")
 
-
-
-test_country <- function(iso_code, model) {
-  df.test <- open_dataset(c(iso_code), dates = TRUE)
-  print(df.test)
-  to.plot <- data.frame(y_real = df.test$new_cases, date = df.test$date)
-  df.test$total_cases <- NULL
-  df.test$date <- NULL
-  to.plot$y_pred <- predict(model, newdata=df.test)
-  print(mean((to.plot$y_real-to.plot$y_pred)^2))
-  plot <- ggplot(to.plot, aes(x=date)) +
-    geom_line(aes(y=y_real, group=1)) +
-    geom_line(aes(y=y_pred, group=2))
-  print(plot)
-}
