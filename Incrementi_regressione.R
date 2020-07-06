@@ -3,7 +3,7 @@ library(leaps)
 library(car)
 library(glmnet)
 library(ggplot2)
-path_a="/Users/Antonio/Documents/GitHub/sda-project"
+path_a="/Users/Antonio/Desktop/sda-project"
 path_v="/Users/vincenzo/Documents/GitHub/sda-project"
 setwd(path_a)
 open_dataset <- function(iso_codes, dates=FALSE, iso=FALSE) {
@@ -66,26 +66,18 @@ test_country <- function(df.test, iso, model) {
     geom_line(aes(y=y_real, group=1)) +
     geom_line(aes(y=y_pred, group=2), color='red')
   print(plot)
+  return(mean((to.plot$y_real-to.plot$y_pred)^2))
+}.
+predict.regsubsets = function(object,newdata,id,...){ 
+  form=as.formula(object$call[[2]])
+  mat=model.matrix(form, newdata)
+  coefi=coef(object, id=id)
+  xvars=names(coefi)
+  mat[,xvars]%*%coefi
 }
-
-
-
 #LOAD DATA##################
-data_train = open_dataset(c('ITA', 'GBR', 'IND', 'JPN', 'ISR', 'LUX', 'AUS', 'AUT', 'NZL', 'ARG', 'BEL', 'CAN', 'ZAF', 'PRT','ISL','CHE'))
+data_train = open_dataset(c('ITA', 'GBR', 'IND', 'JPN', 'ISR', 'LUX', 'AUS', 'AUT', 'NZL', 'ARG', 'BEL', 'CAN', 'ZAF', 'PRT','ISL','CHE','RUS','TUR','DNK')) #-334 for validation
 data_test = open_dataset( c('USA','IRN','KOR','URY'),TRUE,TRUE)
-data_validation = open_dataset(c('RUS','TUR','DNK'))
-#CONVERT DATA TO LOG RESPONSE#############################################
-data_train.log <- data_train
-data_train.log$new_cases <- log(data_train$new_cases + 0.1)
-data_train.log$actual_cases = log(data_train$actual_cases + 0.1)
-data_test.log <- data_test
-data_test.log$new_cases <- log(data_test$new_cases + 0.1)
-data_test.log$actual_cases = log(data_test$actual_cases + 0.1)
-data_validation.log <- data_validation
-data_validation.log$new_cases <- log(data_validation$new_cases + 0.1)
-data_validation.log$actual_cases = log(data_validation$actual_cases + 0.1)
-
-
 #CHECK DEPENDENCIES###################################
 dev.new()
 pairs(~new_cases+stringency_index+population_density+median_age+population,data_train)
@@ -95,15 +87,50 @@ dev.new()
 pairs(~new_cases+cvd_death_rate+diabetes_prevalence+female_smokers+male_smokers,data_train)
 dev.new()
 pairs(~new_cases+new_tests+total_tests+actual_cases,data_train)
-
 #FITTING LINEAR MODEL#########################
+#REMOVE ININFLUENTIAL POINTS
+cooksd <- cooks.distance(fit)
+# Plot the Cook's Distance using the traditional 4/n criterion
+sample_size <- nrow(data_train)
+plot(cooksd, pch="*", cex=2, main="Influential Obs by Cooks distance")  # plot cook's distance
+abline(h = 4/sample_size, col="red")  # add cutoff line
+text(x=1:length(cooksd)+1, y=cooksd, labels=ifelse(cooksd>4/sample_size, names(cooksd),""), col="red")  # add labels
+influential <- as.numeric(names(cooksd)[(cooksd > (4/sample_size))])
+data_train = data_train[which(!(rownames(data_train) %in% influential)),]
+
+# FITTING LINEAR MODEL WITHOUT ININFLUENT POINTS
 fit = lm(new_cases~.,data_train)
 summary(fit)
 # model diagnositic plots
 dev.new()
 par(mfrow=c(2,2))
 plot(fit)
+adj.fit = lm(new_cases~.-aged_65_older-diabetes_prevalence-male_smokers,data_train)
+summary(adj.fit)
+# model diagnositic plots
+dev.new()
+par(mfrow=c(2,2))
+plot(adj.fit)
+vif(adj.fit)
 
+adj.fit = lm(new_cases~.-aged_65_older-diabetes_prevalence-male_smokers-median_age-aged_70_older,data_train)
+summary(adj.fit)
+
+best.fit.res = resid(adj.fit)
+dev.new()
+plot(data_train$new_cases, best.fit.res, ylab="Residuals", xlab="Samples", main="Residual Plot")
+abline(0, 0)
+
+#CONVERT DATA TO LOG RESPONSE#############################################
+data_train$new_cases <- log(data_train$new_cases + 0.1)
+data_train = na.omit(data_train.log)
+data_train$actual_cases = log(data_train$actual_cases + 0.1)
+data_test$new_cases <- log(data_test$new_cases + 0.1)
+data_test$actual_cases = log(data_test$actual_cases + 0.1)
+
+
+#FITTING LINEAR MODEL LOG OF RESPONSE######################################
+fit = lm(new_cases~.,data_train)
 
 #REMOVE ININFLUENTIAL POINTS
 cooksd <- cooks.distance(fit)
@@ -116,91 +143,48 @@ influential <- as.numeric(names(cooksd)[(cooksd > (4/sample_size))])
 data_train = data_train[which(!(rownames(data_train) %in% influential)),]
 
 
-# FITTING LINEAR MODEL WITHOUT ININFLUENT POINTS
 fit = lm(new_cases~.,data_train)
 summary(fit)
 # model diagnositic plots
 dev.new()
 par(mfrow=c(2,2))
 plot(fit)
-#FITTING LINEAR MODEL LOG OF RESPONSE######################################
-log.fit = lm(new_cases~.,data_train.log)
-summary(log.fit)
-# model diagnositic plots
-dev.new()
-par(mfrow=c(2,2))
-plot(log.fit)
-
-#REMOVE ININFLUENTIAL POINTS
-cooksd <- cooks.distance(log.fit)
-# Plot the Cook's Distance using the traditional 4/n criterion
-sample_size <- nrow(data_train.log)
-plot(cooksd, pch="*", cex=2, main="Influential Obs by Cooks distance")  # plot cook's distance
-abline(h = 4/sample_size, col="red")  # add cutoff line
-text(x=1:length(cooksd)+1, y=cooksd, labels=ifelse(cooksd>4/sample_size, names(cooksd),""), col="red")  # add labels
-influential <- as.numeric(names(cooksd)[(cooksd > (4/sample_size))])
-data_train.log = data_train.log[which(!(rownames(data_train.log) %in% influential)),]
-
-
-log.fit = lm(new_cases~.,data_train.log)
-summary(log.fit)
-# model diagnositic plots
-dev.new()
-par(mfrow=c(2,2))
-plot(log.fit)
-
-#REFIT LINEAR MODEL WITH ONLY SIGNFICANT PREDICTORS###################
-adj.fit = lm(new_cases~.-female_smokers-diabetes_prevalence-aged_70_older-cvd_death_rate,data_train)
+#REFIT LINEAR MODEL (LOG RESPONSE) WITH ONLY SIGNFICANT PREDICTORS
+adj.fit = lm(new_cases~.-diabetes_prevalence,data_train)
 summary(adj.fit)
-# model diagnositic plots
-dev.new()
-par(mfrow=c(2,2))
-plot(adj.fit)
 vif(adj.fit)
+adj.fit = lm(new_cases~.-diabetes_prevalence-population-population_density-median_age-aged_65_older-aged_70_older-cvd_death_rate,data_train)
 
-adj.fit = lm(new_cases~.-female_smokers-diabetes_prevalence-aged_70_older-cvd_death_rate-median_age-aged_65_older,data_train)
-summary(adj.fit)
-# model diagnositic plots
-dev.new()
-par(mfrow=c(2,2))
-plot(adj.fit)
+#BEST SUBSET SELECTION VIA CROSS-VALIDATION#######
 
-#REFIT LINEAR MODEL (LOG RESPONSE) WITH ONLY SIGNFICANT PREDICTORS#########
-adjlog.fit = lm(new_cases~.-female_smokers-actual_cases,data_train.log)
-summary(adjlog.fit)
-# model diagnositic plots
-dev.new()
-par(mfrow=c(2,2))
-plot(adjlog.fit)
-vif(adjlog.fit)
-
-#REFIT LINEAR MODEL (LOG RESPONSE) WITH ONLY SIGNFICANT PREDICTORS#########
-adjlog.fit = lm(new_cases~.-female_smokers-actual_cases-population-population_density-median_age-aged_65_older-aged_70_older-cvd_death_rate,data_train.log)
-summary(adjlog.fit)
-# model diagnositic plots
-dev.new()
-par(mfrow=c(2,2))
-plot(adjlog.fit)
-#BEST SUBSET SELECTION#######
-best.fit=regsubsets(new_cases~.,data_train,nvmax = 15)
-reg.summary=summary(best.fit)
-#PLOT TO CHOOSE THE BEST NUMBER OF PREDICTORS
-plot_best_predictors(reg.summary,best.fit)
-#CHECK MIN ERROR ON VALIDATION SET
-test.mat=model.matrix(new_cases~.,data=data_validation)
-val.errors=rep(NA,14)
-for(i in 1:14){
-  coefi = coef(best.fit,id=i)
-  pred = test.mat[,names(coefi)]%*%coefi
-  val.errors[i] = mean((data_validation$new_cases-pred)^2)
+k=10
+set.seed(1)
+folds = sample(1:k,nrow(data_train),replace=TRUE)
+cv.errors = matrix(NA,k,15, dimnames=list(NULL, paste(1:15)))
+# write a for loop that performs cross-validation
+for(j in 1:k){
+  best.fit=regsubsets(new_cases~., data=data_train[folds!=j,], nvmax=15)
+  print(j)
+  for(i in 1:15){
+    pred = predict(best.fit, data_train[folds==j,], id=i)
+    print(i)
+    print(length(pred))
+    print(length(data_train[folds==j,]$new_cases))
+    cv.errors[j,i] = mean((data_train[folds==j,]$new_cases-pred)^2)
+  }
 }
-val.errors; which.min(val.errors) 
-coef(best.fit,which.min(val.errors)) # This is based on training data
+# This has given us a 10×19 matrix, of which the (i,j)th element corresponds to the test MSE for the i-th cross-validation fold for the best j-variable model.
+mean.cv.errors=apply(cv.errors, 2, mean); mean.cv.errors# Column average
+colMeans(cv.errors) # the same
+par(mfrow=c(1,1))
+dev.new()
+plot(mean.cv.errors, type="b") #it selects an 10-variable model (11 on the textbook)
+# We now perform best subset selection on the full data set to obtain the 10-variable model.
+reg.best=regsubsets (Salary~., data=Hitters, nvmax=19)
+# coef(reg.best, 11)
+coef(reg.best, which.min(mean.cv.errors))
 
-best.fit = lm(new_cases~stringency_index+population+median_age+gdp_per_capita+total_cases+new_tests+total_tests,data_train)
-
-
-# BACKWARD SELECTION ((((((((((((((((((DA QUI))))))))))))))))))
+# BACKWARD SELECTION###############################
 back.fit=regsubsets(data_train$new_cases~.,data_train,method = "backward",nvmax=15)
 back.summary=summary(back.fit)
 plot_best_predictors(back.summary,back.fit)
@@ -215,6 +199,7 @@ for(i in 1:14){
 
 val.errors; which.min(val.errors) 
 min_error.back = coef(back.fit,which.min(val.errors)) 
+back.fit = lm(new_cases~stringency_index+population+population_density+median_age+aged_65_older+gdp_per_capita+new_cases+total_tests,data_train)
 
 # FORWARD SELECTION
 for.fit=regsubsets(data_train$new_cases~.,data_train,method = "forward",nvmax=15)
@@ -230,7 +215,7 @@ for(i in 1:14){
 }
 # The best model is the one that contains which.min(val.errors) (ten in the book) variables.
 val.errors; which.min(val.errors) 
-min_error.for = coef(for.fit,which.min(val.errors)) 
+coef(for.fit,which.min(val.errors)) 
 
 ######################################################################################################################################################################
 #BESTSUBSET SELECTION FOR LOG MODEL
@@ -249,8 +234,8 @@ for(i in 1:14){
 }
 # The best model is the one that contains which.min(val.errors) (ten in the book) variables.
 val.errors; which.min(val.errors) 
-min_error.log.best = coef(best.log.fit,which.min(val.errors)) # This is based on training data
-
+coef(best.log.fit,which.min(val.errors)) # This is based on training data
+best.log.fit = lm(new_cases~stringency_index+population+population_density+median_age+aged_65_older+aged_70_older+gdp_per_capita+female_smokers+male_smokers+total_cases+new_tests+total_tests+actual_cases,data_train.log)
 # BACKWARD SELECTION FOR LOG MODEL
 back.log.fit=regsubsets(data_train$new_cases~.,data_train,method = "backward",nvmax=15)
 back.summary.log=summary(back.log.fit)
@@ -265,8 +250,9 @@ for(i in 1:14){
 }
 # The best model is the one that contains which.min(val.errors) (ten in the book) variables.
 val.errors; which.min(val.errors) 
-min_error.back.log = coef(back.log.fit,which.min(val.errors)) 
-
+coef(back.log.fit,which.min(val.errors)) 
+back.log.fit = lm(new_cases~stringency_index+population+population_density+median_age+aged_65_older+gdp_per_capita+new_tests+total_tests,data_train.log)
+# BACKWARD SELECTION FOR LOG MODEL
 # FORWARD SELECTION LOG MODEL
 for.log.fit=regsubsets(data_train$new_cases~.,data_train,method = "forward",nvmax=15)
 for.summary.log=summary(for.fit)
@@ -281,72 +267,62 @@ for(i in 1:14){
 }
 # The best model is the one that contains which.min(val.errors) (ten in the book) variables.
 val.errors; which.min(val.errors) 
-min_error.for.log = coef(for.fit,which.min(val.errors)) 
+coef(for.fit,which.min(val.errors)) 
 
-
-
+#check best performance
+data_validation = open_dataset(c('RUS','TUR','DNK'),TRUE,TRUE)
+data_validation.log <- data_validation
+data_validation.log$new_cases <- log(data_validation$new_cases + 0.1)
+data_validation.log$actual_cases = log(data_validation$actual_cases + 0.1)
+val.errors.best = 0
+val.errors.back =0
+for( iso in c('RUS','TUR','DNK')){
+  val.errors.best = test_country(data_validation,iso,best.fit) + val.errors.best
+  val.errors.back = test_country(data_validation,iso,back.fit) + val.errors.back
+}
+val.errors.best = val.errors.best/3
+val.errors.back = val.errors.back/3
+#the best subset selection outperforms
+val.errors.log.best = 0
+val.errors.log.back =0
+for( iso in c('RUS','TUR','DNK')){
+  val.errors.log.best = test_country(data_validation.log,iso,best.log.fit) + val.errors.log.best
+  val.errors.log.back = test_country(data_validation.log,iso,back.log.fit) + val.errors.log.back
+}
+val.errors.log.best = val.errors.log.best/3
+val.errors.log.back = val.errors.log.back/3
+#RIDGE AND LASSO#######################
+#The best subset selection outperforms
 #variable selection with Ridge Regression and the Lasso
-
 # use the glmnet package in order to perform ridge regression and the lasso. We do not use the y ??? x syntax here, but matrix and vector.
 # perform ridge regression and the lasso in order to predict Salary on the Hitters data. Missing values has to be removed
 # It has an alpha argument that determines what type of model is fit.
 # If alpha = 0 a ridge regression model is fit.
 # If alpha = 1 (default) then a lasso model is fit. 
 
-x = model.matrix(data_train.log$new_cases_per_million~., data_train.log)[,-1] # without 1's 
-y = data_train.log$new_cases_per_million
+x = model.matrix(new_cases~stringency_index+population+median_age+gdp_per_capita+total_cases+new_tests+total_tests, data_train)[,-1] # without 1's 
+x_val = model.matrix(new_cases~stringency_index+population+median_age+gdp_per_capita+total_cases+new_tests+total_tests, data_validation)[,-1] # without 1's 
+y = data_train$new_cases
+y_val = data_validation$new_cases
+x.log = model.matrix(best.log.fit, data_train.log)[,-1] # without 1's 
+y.log = data_train$new_cases
 
-grid=10^seq(10,-2,length=100)
+grid=10^seq(15,-5,length=200)
 ridge.mod=glmnet(x,y,alpha=0,lambda=grid)
 
-dim(coef(ridge.mod))
+log.grid=10^seq(3,-1,length=100)
+log.ridge.mod=glmnet(x,y,alpha=0,lambda=log.grid)
 
-
-
-
-############
-
-
-ridge.mod$lambda[50] # grid[50] = 11497.57
-coef(ridge.mod)[,50] # corresponding coefficients
-sqrt(sum(coef(ridge.mod)[-1,50]^2)) # l2 norm
-ridge.mod$lambda[60] # lambda = 705.48
-coef(ridge.mod)[,60] # corresponding coefficients
-sqrt(sum(coef(ridge.mod)[-1,60]^2)) # l2 norm > l2 for lambda[50]
-
-predict(ridge.mod,s=50,type="coefficients")[1:15,] 
-# Validation approach to estimate test error
-set.seed(1)
-train=sample(1:nrow(x), nrow(x)/2) # another typical approach to sample
-test=(-train)
-y.test=y[test]
-# fit a ridge regression model on the training set, and evaluate its MSE on the test set, using lambda = 4. 
-ridge.mod=glmnet(x[train,],y[train],alpha=0,lambda=grid,thresh=1e-12)
-ridge.pred=predict(ridge.mod,s=4,newx=x[test,]) # Note the use of the predict() function again. This time we get predictions for a test set, by replacing type="coefficients" with the newx argument.
-mean((ridge.pred-y.test)^2) # test MSE
-mean((mean(y[train ])-y.test)^2) # test MSE, if we had instead simply fit a model with just an intercept, we would have predicted each test observation using the mean of the training observations.
-# We could also get the same result by fitting a ridge regression model
-# with a very large value of lambda, i.e. 10^10:
-ridge.pred=predict(ridge.mod,s=1e10,newx=x[test,])
-mean((ridge.pred-y.test)^2) # like intercept only
-# Least squares is simply ridge regression with lambda=0;
-ridge.pred=predict(ridge.mod,s=0,newx=x[test,],exact=T,x=x[train,],y=y[train]) # corrected according to errata (glmnet pack updated)
-# In order for glmnet() to yield the exact least squares coefficients when lambda = 0, we use the argument exact=T when calling the predict() function. Otherwise, the predict() function will interpolate over the grid of lambda values used in fitting the glmnet() model, yielding approximate results. When we use exact=T, there remains a slight discrepancy in the third decimal place between the output of glmnet() when lambda = 0 and the output of lm(); this is due to numerical approximation on the part of glmnet().
-mean((ridge.pred-y.test)^2)
-# Comapre the results from glmnet when lambda=0 with lm()
-lm(y~x, subset=train)
-predict(ridge.mod,s=0,exact=T,type="coefficients",x=x[train,],y=y[train])[1:15,] # corrected according to errata 
-# In general, if we want to fit a (unpenalized) least squares model, then we should use the lm() function, since that function provides more useful outputs,such as standard errors and p-values.
-## CROSS-VALIDATION
-# Instead of using the arbitrary value lambda=4, cv.glmnet() uses cross-validation to choose the tuning parameter
-# By default, the function performs ten-fold cross-validation, 
-# though this can be changed using the argument nfolds.
-set.seed (1)
-cv.out=cv.glmnet(x[train,],y[train],alpha=0)
+ridge.pred=predict(ridge.mod,s=4,newx=x_val,exact=T,x=x,y=y) # Note the use of the predict() function again. This time we get predictions for a test set, by replacing type="coefficients" with the newx argument.
+mean((ridge.pred-y_val)^2) # test MSE
+x_merged = model.matrix(new_cases~stringency_index+population+median_age+gdp_per_capita+total_cases+new_tests+total_tests, data_merged)[,-1] # without 1's 
+y_merged = data_merged$new_cases
+cv.out=cv.glmnet(x_merged,y_merged,alpha=0)
 dev.new()
 plot(cv.out)
 bestlam=cv.out$lambda.min; bestlam;log(bestlam) # the best lambda (212 on the text)
-cv.out$lambda.1se
+
+
 ridge.pred=predict(ridge.mod,s=bestlam ,newx=x[test,])
 mean((ridge.pred-y.test)^2)
 
