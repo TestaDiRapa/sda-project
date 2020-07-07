@@ -129,10 +129,10 @@ plot(data_train$new_cases, best.fit.res, ylab="Residuals", xlab="Samples", main=
 abline(0, 0)
 
 #CONVERT DATA TO LOG RESPONSE#############################################
-data_train$new_cases <- log(data_train$new_cases + 0.1)
-data_train$actual_cases = log(data_train$actual_cases + 0.1)
-data_test$new_cases <- log(data_test$new_cases + 0.1)
-data_test$actual_cases = log(data_test$actual_cases + 0.1)
+data_train$new_cases <- log(data_train$new_cases + 1)
+data_train$actual_cases = log(data_train$actual_cases + 1)
+data_test$new_cases <- log(data_test$new_cases + 1)
+data_test$actual_cases = log(data_test$actual_cases + 1)
 data_train = na.omit(data_train)
 data_test = na.omit(data_test)
 
@@ -181,8 +181,6 @@ for(j in 1:k){
   print(j)
   for(i in 1:15){
     pred = predict(best.fit, data_train[folds==j,], id=i)
-    print(i)
-    print(length(pred))
     print(length(data_train[folds==j,]$new_cases))
     cv.errors[j,i] = mean((data_train[folds==j,]$new_cases-pred)^2)
   }
@@ -302,17 +300,25 @@ print(cv.out$lambda.1se)
 lasso.mod = glmnet(x[train,], y[train], alpha=1, lambda=bestlam)
 lasso.pred=predict(lasso.mod,s=bestlam ,newx=x[test,])
 mean((lasso.pred-y[test])^2) # slighly larger than ridge
+out=glmnet(x,y,alpha=1,lambda=grid)
+lasso.coef=predict(out,type="coefficients",s=bestlam)
+lasso.coef
+####### TEST PERFORMANCE
 
-
-models = c(adj.fit,best.fit,back.fit,for.fit,ridge.mod,lasso.mod)
-
-for(model in models){
-  print(model)
-  for(country in c("USA","IRN","KOR","URY")){
-  print(country)
-  test_country(data_test,country,model)
-  }
+my_predict = function(model,data_test,y_test){
+  y_pred = predict(model,data_test)
+  return(mean((y_test-y_pred)^2))
 }
 
+print(my_predict(adj.fit,data_test,data_test$new_cases))
 
+print(my_predict(best.fit,data_test,data_test$new_cases))
+
+print(my_predict(back.fit,data_test,data_test$new_cases))
+
+print(my_predict(for.fit,data_test,data_test$new_cases))
+
+print(my_predict(ridge.mod,data_test,data_test$new_cases))
+
+print(my_predict(lasso.mod,data_test,data_test$new_cases))
 
