@@ -129,10 +129,10 @@ plot(data_train$new_cases, best.fit.res, ylab="Residuals", xlab="Samples", main=
 abline(0, 0)
 
 #CONVERT DATA TO LOG RESPONSE#############################################
-data_train$new_cases <- log(data_train$new_cases + 1)
-data_train$actual_cases = log(data_train$actual_cases + 1)
-data_test$new_cases <- log(data_test$new_cases + 1)
-data_test$actual_cases = log(data_test$actual_cases + 1)
+data_train$new_cases <- log(data_train$new_cases + 0.1)
+data_train$actual_cases = log(data_train$actual_cases + 0.1)
+data_test$new_cases <- log(data_test$new_cases + 0.1)
+data_test$actual_cases = log(data_test$actual_cases + 0.1)
 data_train = na.omit(data_train)
 data_test = na.omit(data_test)
 
