@@ -80,7 +80,7 @@ predict.regsubsets = function(object,newdata,id,...){
 
 #LOAD DATA##################
 data_train = open_dataset(c('ITA', 'GBR', 'IND', 'JPN', 'ISR', 'LUX', 'AUS', 'AUT', 'NZL', 'ARG', 'BEL', 'CAN', 'ZAF', 'PRT','ISL','CHE','RUS','TUR','DNK')) #-334 for validation
-data_test = open_dataset( c('USA','IRN','KOR','URY'),TRUE,TRUE)
+data_test = open_dataset( c('USA','IRN','KOR','URY'),TRUE,TRUE) #'USA',
 
 #CHECK DEPENDENCIES###################################
 dev.new()
@@ -129,9 +129,9 @@ plot(data_train$new_cases, best.fit.res, ylab="Residuals", xlab="Samples", main=
 abline(0, 0)
 
 #CONVERT DATA TO LOG RESPONSE#############################################
-data_train$new_cases <- log(data_train$new_cases + 0.1)
+# data_train$new_cases <- log(data_train$new_cases + 0.1)
 data_train$actual_cases = log(data_train$actual_cases + 0.1)
-data_test$new_cases <- log(data_test$new_cases + 0.1)
+# data_test$new_cases <- log(data_test$new_cases + 0.1)
 data_test$actual_cases = log(data_test$actual_cases + 0.1)
 data_train = na.omit(data_train)
 data_test = na.omit(data_test)
@@ -257,7 +257,7 @@ y = data_train$new_cases
 #y_train = y[train]
 #y_val = y[test]
 
-grid=10^seq(15,-5,length=200)
+grid=10^seq(15,-2,length=200)
 # ridge.mod=glmnet(x,y,alpha=0,lambda=grid)
 
 # ridge.pred=predict(ridge.mod,s=4,newx=x_val,exact=T,x=x,y=y) # Note the use of the predict() function again. This time we get predictions for a test set, by replacing type="coefficients" with the newx argument.
@@ -270,9 +270,9 @@ set.seed(1)
 cv.out=cv.glmnet(x,y,alpha=0)
 dev.new()
 plot(cv.out)
-bestlam=cv.out$lambda.min; bestlam # the best lambda (212 on the text)
+bestlamr=cv.out$lambda.min; bestlam # the best lambda (212 on the text)
 cv.out$lambda.1se
-ridge.mod=glmnet(x[train,],y[train],alpha=0,lambda=bestlam,thresh=1e-12)
+ridge.mod=glmnet(x[train,],y[train],alpha=0,lambda=bestlamr,thresh=1e-12)
 ridge.pred=predict(ridge.mod,newx=x[test,])
 mean((ridge.pred-y[test])^2)
 
@@ -285,9 +285,11 @@ predict(out,type="coefficients",s=bestlam)[1:15,]
 dev.new()
 plot(out,label = T, xvar = "lambda")
 
-ridge.mod = glmnet(x,y,alpha=0, lambda=bestlam,thresh=1e-12)
+ridge.mod = glmnet(x,y,alpha=0, lambda=bestlamr)
 
-
+out=glmnet(x,y,alpha=1,lambda=grid)
+ridge.coef=predict(out,type="coefficients",s=bestlamr)
+ridge.coef
 ######### LASSO ########
 # use the argument alpha = 1 to perform lasso
 # perform cross-validation
@@ -295,13 +297,13 @@ set.seed (1)
 cv.out=cv.glmnet(x[train,],y[train],alpha=1)
 dev.new()
 plot(cv.out)
-bestlam=cv.out$lambda.min
+bestlaml=cv.out$lambda.min
 print(cv.out$lambda.1se)
-lasso.mod = glmnet(x[train,], y[train], alpha=1, lambda=bestlam)
-lasso.pred=predict(lasso.mod,s=bestlam ,newx=x[test,])
+lasso.mod = glmnet(x[train,], y[train], alpha=1, lambda=bestlaml)
+lasso.pred=predict(lasso.mod,s=bestlaml ,newx=x[test,])
 mean((lasso.pred-y[test])^2) # slighly larger than ridge
 out=glmnet(x,y,alpha=1,lambda=grid)
-lasso.coef=predict(out,type="coefficients",s=bestlam)
+lasso.coef=predict(out,type="coefficients",s=bestlaml)
 lasso.coef
 ####### TEST PERFORMANCE
 
@@ -317,8 +319,17 @@ print(my_predict(best.fit,data_test,data_test$new_cases))
 print(my_predict(back.fit,data_test,data_test$new_cases))
 
 print(my_predict(for.fit,data_test,data_test$new_cases))
+data_test = data_test[,-c(1,2)]
+x_test = model.matrix(new_cases~.,data_test)[,-1] # without 1's 
+y_test = data_test$new_cases
 
-print(my_predict(ridge.mod,data_test,data_test$new_cases))
+ridge.pred=predict(ridge.mod,s=bestlamr,x_test)
+mean((ridge.pred-y_test)^2)
 
-print(my_predict(lasso.mod,data_test,data_test$new_cases))
+lasso.pred=predict(lasso.mod,s=bestlaml,x_test)
+mean((lasso.pred-y_test)^2)
+
+
+
+
 
