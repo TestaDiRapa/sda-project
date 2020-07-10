@@ -3,9 +3,9 @@ library(leaps)
 library(car)
 library(glmnet)
 library(ggplot2)
-#path_a="/Users/Antonio/Desktop/sda-project"
-path_v="/Users/vincenzo/Documents/GitHub/sda-project"
-setwd(path_v)
+path_a="/Users/Antonio/Desktop/sda-project"
+#path_v="/Users/vincenzo/Documents/GitHub/sda-project"
+setwd(path_a)
 set.seed(42)
 
 #### FUNCTION DEFINITION ####
@@ -75,7 +75,23 @@ test_country <- function(df.test, iso, model) {
     geom_line(aes(y=y_real, group=1)) +
     geom_line(aes(y=y_pred, group=2), color='red')
   print(plot)
-  return(mean((to.plot$y_real-to.plot$y_pred)^2))
+}
+
+
+test_country_multi <- function(df.test, iso, adf.fit,best.fit,back.fit) {
+  df.test <- df.test[df.test$iso_code == iso,]
+  to.plot <- data.frame(y_real = df.test$new_cases, date = df.test$date)
+  df.test$new_cases <- NULL
+  df.test$date <- NULL
+  to.plot$y_predadj <- predict(adj.fit, newdata=df.test)
+  to.plot$y_predbest <- predict(best.fit, newdata=df.test)
+  to.plot$y_predback <- predict(back.fit, newdata=df.test)
+  plot <- ggplot(to.plot, aes(x=date)) +
+    geom_line(aes(y=y_real, group=1), size=2) +
+    geom_line(aes(y=y_predadj, group=2), color='red',size=2)+
+    geom_line(aes(y=y_predback, group=2), color='green',size=2)+
+    geom_line(aes(y=y_predbest, group=2), color='blue',size=2)
+  print(plot)
 }
 
 #### BEST SUBSET SELECTION 
@@ -243,9 +259,9 @@ par(mfrow=c(1,1))
 dev.new()
 plot(mean.cv.errors, type="b")
 
-# We now perform best subset selection on the full data set to obtain the 15-variable model.
-reg.best=regsubsets (new_cases~., data=data_train, nvmax=15)
-best.fit = lm(new_cases~.,data_train)
+# We now perform best subset selection on the full data set to obtain the 11-variable model.
+reg.best=regsubsets (new_cases~., data=data_train, nvmax=11)
+best.fit = lm(new_cases~.-cvd_death_rate-diabetes_prevalence-male_smokers,data_train)
 
 # BACKWARD SELECTION OF THE 9 PREDICTORS MODEL VIA VALIDATION APPROACH #####
 train=sample(c(TRUE,FALSE), nrow(data_train),rep=TRUE)
