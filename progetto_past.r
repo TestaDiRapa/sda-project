@@ -5,7 +5,9 @@ library(leaps)
 library(MASS)
 library(tidyverse)
 library(hrbrthemes)
-setwd("D:/Documenti HDD/Uni/Magistrale/Statistical Data Analysis/Esercizi/Progetto")
+
+path_a="/Users/Antonio/Desktop/sda-project"
+setwd(path_a)
 set.seed(42)
 ########################################################################################################
 ### FUNCTIONS

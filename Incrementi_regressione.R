@@ -331,75 +331,246 @@ lasso.mod = glmnet(x[train,], y[train], alpha=1, lambda=bestlaml)
 lasso.pred=predict(lasso.mod,s=bestlaml ,newx=x[test,])
 mean((lasso.pred-y[test])^2) # slighly larger than ridge
 out=glmnet(x,y,alpha=1,lambda=grid)
-lasso.coef=predict(out,type="coefficients",s=bestlaml)
-
-
-#### RIDGE WITH 7 PREDICTORS MODEL ####
-x = model.matrix(new_cases~stringency_index+aged_65_older+male_smokers+new_tests+total_tests+actual_cases+total_cases,data_train)[,-1] # without 1's 
-x_val = model.matrix(new_cases~stringency_index+aged_65_older+male_smokers+new_tests+total_tests+actual_cases+total_cases,data_train)[,-1] # without 1's 
-y = data_train$new_cases
-grid=10^seq(10,-2,length=500)
-
-#finding the best lambda through the cross-validation
-cv.out=cv.glmnet(x,y,alpha=0)
-dev.new()
-plot(cv.out)
-bestlamr7=cv.out$lambda.min;
-cv.out$lambda.1se
-ridge7.mod=glmnet(x[train,],y[train],alpha=0,lambda=bestlamr7,thresh=1e-12)
-ridge7.pred=predict(ridge7.mod,newx=x[test,])
-mean((ridge7.pred-y[test])^2)
-
-# REFIT RIDGE REGRESSION MODEL ON FULL DATA SET WITH THE BEST LAMBDA
-out=glmnet(x,y,alpha=0)
-predict(out,type="coefficients",s=bestlamr7)
-# As expected, none of the coefficients are zero
-# ridge regression does not perform variable selection!
 dev.new()
 plot(out,label = T, xvar = "lambda")
-
-ridge7.mod = glmnet(x,y,alpha=0, lambda=bestlamr7)
-
-out=glmnet(x,y,alpha=1,lambda=grid)
-ridge7.coef=predict(out,type="coefficients",s=bestlamr7)
-
-#### LASSO WITH 7 PREDICTORS MODEL ####
-#finding the best lambda through the cross-validation
-cv.out=cv.glmnet(x[train,],y[train],alpha=1)
-dev.new()
-plot(cv.out)
-bestlaml7=cv.out$lambda.min
-print(cv.out$lambda.1se)
-lasso7.mod = glmnet(x[train,], y[train], alpha=1, lambda=bestlaml7)
-lasso7.pred=predict(lasso7.mod,s=bestlaml7 ,newx=x[test,])
-mean((lasso7.pred-y[test])^2) # slighly larger than ridge
-out=glmnet(x,y,alpha=1,lambda=grid)
-lasso7.coef=predict(out,type="coefficients",s=bestlaml7)
+lasso.coef=predict(out,type="coefficients",s=bestlaml)
 
 ####### TEST PERFORMANCE #####
-print(my_predict(adj.fit,data_test,data_test$new_cases))
 
-print(my_predict(best.fit,data_test,data_test$new_cases))
+x.train = model.matrix(new_cases~stringency_index+population+aged_65_older+diabetes_prevalence+male_smokers+new_tests+total_tests+actual_cases+total_cases,data_train)[,-1] # without 1's 
+x.test = model.matrix(new_cases~stringency_index+population+aged_65_older+diabetes_prevalence+male_smokers+new_tests+total_tests+actual_cases+total_cases,data_test)[,-1] # without 1's 
+y.test = data_test$new_cases
+y.train = data_train$new_cases
 
-print(my_predict(back.fit,data_test,data_test$new_cases))
+type <- rep(c("Test", "Train"), 6)
+labels <- c("all_predictors", "all_predictors", "vif_selected", "vif_selected", "best_subset", "best_subset", "backward","backward", "ridge", "ridge", "lasso", "lasso")
+test.mse <- c(1:12)
+df.plot <- data_test
+#df.plot$date <- substr(df.plot$date, 6, 10)
+fit = lm(new_cases~.,data_train)
+y.fit <- predict(fit, data_test[,-c(1, 2)])
+df.plot$all_predictors <- y.fit
+test.mse[1] <- mean((y.test - y.fit)^2)
+test.mse[2] <- mean((y.train - predict(fit, data_train))^2)
 
-data_test = data_test[,-c(1,2)]
-x_test = model.matrix(new_cases~stringency_index+population+aged_65_older+diabetes_prevalence+male_smokers+new_tests+total_tests+actual_cases+total_cases,data_test)[,-1] # without 1's 
-y_test = data_test$new_cases
+y.adj.fit = predict(adj.fit, data_test[,-c(1, 2)])
+df.plot$vif_selected <- y.adj.fit
+test.mse[3] <- mean((y.test - y.adj.fit)^2)
+test.mse[4] <- mean((y.train - predict(adj.fit, data_train))^2)
 
-ridge.pred=predict(ridge.mod,s=bestlamr,x_test)
-mean((ridge.pred-y_test)^2)
+y.best.fit = predict(best.fit, data_test[,-c(1, 2)])
+df.plot$best_subset <- y.best.fit
+test.mse[5] <- mean((y.test - y.best.fit)^2)
+test.mse[6] <- mean((y.train - predict(best.fit, data_train))^2)
 
-lasso.pred=predict(lasso.mod,s=bestlaml,x_test)
-mean((lasso.pred-y_test)^2)
+y.best.fit.adj = predict(back.fit, data_test[,-c(1, 2)])
+df.plot$backward <- y.best.fit.adj
+test.mse[7] <- mean((y.test - y.best.fit.adj)^2)
+test.mse[8] <- mean((y.train - predict(back.fit, data_train))^2)
 
-x_test = model.matrix(new_cases~stringency_index+aged_65_older+male_smokers+new_tests+total_tests+actual_cases+total_cases,data_test)[,-1] # without 1's 
-y_test = data_test$new_cases
+y.ridge <- predict(ridge.mod, newx=x.test)
+df.plot$ridge <- y.ridge
+test.mse[9] <- mean((y.test - y.ridge)^2)
+test.mse[10] <- mean((y.train - predict(ridge.mod, newx=x.train))^2)
 
-ridge7.pred=predict(ridge7.mod,s=bestlamr,x_test)
-mean((ridge7.pred-y_test)^2)
+y.lasso <- predict(lasso.mod, newx=x.test)
+df.plot$lasso <- y.lasso
+test.mse[11] <- mean((y.test - y.lasso)^2)
+test.mse[12] <- mean((y.train - predict(lasso.mod, newx=x.train))^2)
 
-lasso7.pred=predict(lasso7.mod,s=bestlaml,x_test)
-mean((lasso7.pred-y_test)^2)
+result.df <- data.frame(models = labels, mse = test.mse, type = type)
+p <- ggplot(result.df, aes(x = models, y = mse, fill = type)) +
+  geom_bar(stat="identity", position=position_dodge()) +
+  #geom_text(aes(label=test.mse), vjust=1.6, color="white", position = position_dodge(0.9), size=3.5) +
+  scale_fill_brewer(palette="Paired") +
+  theme_minimal()
+p
 
 
+test_multiple_country <- function(df.test, iso) {
+  line.width <- 1.05
+  to.plot <- df.test[df.test$iso_code == iso,]
+  to.plot$date  <- as.Date(to.plot$date)
+  dev.new()
+  plot <- ggplot(to.plot, aes(x=date)) +
+    geom_line(aes(y=new_cases, colour='black', group = 1), size=line.width, ) +
+    geom_line(aes(y=all_predictors, colour='red', group = 2), size=line.width) +
+    geom_line(aes(y=backward, colour='cyan', group = 3), size=line.width) +
+    geom_line(aes(y=best_subset, colour='blue', group = 4), size=line.width) +
+    geom_line(aes(y=vif_selected, colour='green', group = 5), size=line.width) +
+    geom_line(aes(y=ridge, colour='magenta', group = 6), size=line.width) +
+    geom_line(aes(y=lasso, colour='yellow', group = 7), size=line.width) + 
+    scale_color_discrete(name = "Legend", labels = c("real_cases", "all_predictors", "vif_selected", "best_subset", "backward","ridge", "lasso")) +
+    scale_x_date("Days", breaks = "10 days") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ggtitle(country)
+  print(plot)
+}
+
+for(country in c("USA","KOR","URY","IRN")){
+  test_multiple_country(df.plot,country)
+}
+
+
+
+
+single_state_prediction <- function(country, split) {
+  s.train <- open_dataset(c(country))[c(1:split),]
+  s.test <- open_dataset(c(country), iso = TRUE, dates = TRUE)
+  s.test$actual_cases <- log(s.test$actual_cases + 0.00001)
+  s.test <- na.omit(s.test)
+  s.train$actual_cases <- log(s.train$actual_cases + 0.00001)
+  s.train <- na.omit(s.train)
+  plot.s <- data.frame(date=as.Date(s.test$date), new_cases=s.test$new_cases)
+  adj.fit.s <- lm(new_cases~.- aged_70_older - median_age - cvd_death_rate - 
+                    population_density - gdp_per_capita - female_smokers-population-aged_65_older-diabetes_prevalence-male_smokers, data=s.train)
+  print(summary(adj.fit.s))
+  pred <- rep(0, length(s.test$new_cases))
+  pred[1:split] <- predict(adj.fit.s, s.test[c(1:split),-c(1, 2)])
+  # s.test$total_tests[(split+1):length(pred)] <- s.test$total_tests[split] + s.test$new_tests[split]*c(1:(length(pred)-split))
+  # s.test$stringency_index[(split+1):length(pred)] <- 0
+  for(i in (split+1):length(pred)) {
+    t = pred[i-1] + exp(s.test[i-1,]$actual_cases)
+    if(t <=0){
+      t=0.00001
+    }
+    s.test[i,]$actual_cases <- log(t)
+    pred[i] <- predict(adj.fit.s, s.test[i,-c(1, 2)])
+  }
+  plot.s$prediction <- pred
+  line.width <- 1.05
+  plot <- ggplot(plot.s, aes(x=date)) +
+    geom_line(aes(y=new_cases, colour='black', group = 1), size=line.width, ) +
+    geom_line(aes(y=prediction, colour='green', group = 2), size=line.width) +
+    scale_color_discrete(name = "Legend", labels = c("real_cases", "prediction")) +
+    geom_vline(xintercept = plot.s$date[split], linetype="dashed", color = "blue", size=line.width) +
+    scale_x_date("Days", breaks = "5 days") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  print(plot)
+  return(mean((pred[(split+1):length(pred)] - plot.s$new_cases[(split+1):length(pred)])^2))
+}
+
+s.mse <- rep(0, 4)
+s.mse[1] <- single_state_prediction('KOR', 50)
+s.mse[2] <- single_state_prediction('USA', 50)
+s.mse[3] <- single_state_prediction('URY', 50)
+s.mse[4] <- single_state_prediction('IRN', 25)
+single.state.mse <- mean(s.mse)
+
+
+single_state_prediction.2 <- function(country, split, model) {
+  s.train <- open_dataset(c(country))[c(1:split),]
+  s.test <- open_dataset(c(country), iso = TRUE, dates = TRUE)
+  plot.s <- data.frame(date=as.Date(s.test$date), new_cases=s.test$new_cases)
+  s.test$actual_cases <- log(s.test$actual_cases + 0.00001)
+  s.test <- na.omit(s.test)
+  s.train$actual_cases <- log(s.train$actual_cases + 0.00001)
+  s.train <- na.omit(s.train)
+  pred <- rep(0, length(s.test$new_cases))
+  pred[1:split] <- predict(model, s.test[c(1:split),-c(1, 2)])
+  # s.test$total_tests[(split+1):length(pred)] <- s.test$total_tests[split] + s.test$new_tests[split]*c(1:(length(pred)-split))
+  # s.test$stringency_index[(split+1):length(pred)] <- 0
+  for(i in (split+1):length(pred)) {
+    t = pred[i-1] + exp(s.test[i-1,]$actual_cases)
+    print(t)
+    if(t <=0){
+      t=0.00001
+    }
+    s.test[i,]$actual_cases <- log(t)
+    pred[i] <- predict(model, s.test[i,-c(1, 2)])
+  }
+  plot.s$prediction <- pred
+  line.width <- 1.05
+  plot <- ggplot(plot.s, aes(x=date)) +
+    geom_line(aes(y=new_cases, colour='black', group = 1), size=line.width, ) +
+    geom_line(aes(y=prediction, colour='green', group = 2), size=line.width) +
+    scale_color_discrete(name = "Legend", labels = c("real_cases", "prediction")) +
+    geom_vline(xintercept = plot.s$date[split], linetype="dashed", color = "blue", size=line.width) +
+    scale_x_date("Days", breaks = "5 days") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ggtitle(country)
+  print(plot)
+  return(mean((pred[(split+1):length(pred)] - plot.s$new_cases[(split+1):length(pred)])^2))
+}
+t.mse <- rep(0, 4)
+t.mse[1] <- single_state_prediction.2('KOR', 50, adj.fit)
+t.mse[2] <- single_state_prediction.2('USA', 50, adj.fit)
+t.mse[3] <- single_state_prediction.2('URY', 50, adj.fit)
+t.mse[4] <- single_state_prediction.2('IRN', 25, adj.fit)
+
+ single_state_prediction.2('ITA', 50, adj.fit)
+all.states.mse <- mean(t.mse)
+
+mse.plot <- data.frame(model=c("single state", "multi state"), mse=c(single.state.mse, all.states.mse))
+p <- ggplot(mse.plot, aes(x = model, y = mse)) +
+  geom_bar(stat="identity", position=position_dodge(), fill="lightblue") +
+  scale_fill_brewer(palette="Paired") +
+  theme_minimal()
+p
+
+
+
+single_state_prediction.3 <- function(country, split, model) {
+  s.test <- open_dataset(c(country), iso = TRUE, dates = TRUE)
+  s.test$actual_cases <- log(s.test$actual_cases + 0.00001)
+  s.test <- na.omit(s.test)
+  s.test.t <-s.test
+  s.test.i <- s.test
+  plot.s <- data.frame(date=as.Date(s.test$date), new_cases=s.test$new_cases)
+  pred <- rep(0, length(s.test$new_cases))
+  pred_t <- rep(0, length(s.test$new_cases))
+  pred_i <- rep(0, length(s.test$new_cases))
+  pred[1:split] <- predict(model, s.test[c(1:split),-c(1, 2)])
+  pred_t[1:split] <- predict(model, s.test[c(1:split),-c(1, 2)])
+  pred_i[1:split] <- predict(model, s.test[c(1:split),-c(1, 2)])
+   # s.test$total_tests[(split+1):length(pred)] <- s.test$total_tests[split] # + s.test$new_tests[split]*c(1:(length(pred)-split))
+   # s.test$new_tests[(split+1):length(pred)] <- 0
+   # s.test.i$total_tests[(split+1):length(pred)] <- s.test.t$total_tests[(split+1):length(pred)]+s.test.t$new_tests[(split+1):length(pred)]
+   # s.test.i$new_tests[(split+1):length(pred)] <- 2*s.test.t$new_tests[(split+1):length(pred)]
+  s.test$stringency_index[(split+1):length(pred)] <- seq(s.test$stringency_index[split], 0, length=length(pred)-split)
+  s.test.i$stringency_index[(split+1):length(pred)] <- seq(s.test$stringency_index[split], 100, length=length(pred)-split)
+  for(i in (split+1):length(pred)) {
+    t = pred[i-1] + exp(s.test[i-1,]$actual_cases)
+    
+    if(t <=0){
+      t=0.00001
+    }
+    t.t = pred_t[i-1] + exp(s.test.t[i-1,]$actual_cases)
+    
+    if(t.t <=0){
+      t.t=0.00001
+    }
+    t.i = pred_i[i-1] + exp(s.test.i[i-1,]$actual_cases)
+    
+    if(t.i <=0){
+      t.i=0.00001
+    }
+    s.test[i,]$actual_cases <- log(t)
+    pred[i] <- predict(model, s.test[i,-c(1, 2)])
+    s.test.t[i,]$actual_cases <- log(t.t)
+    pred_t[i] <- predict(model, s.test.t[i, -c(1, 2)])
+    s.test.i[i,]$actual_cases <- log(t.i)
+    pred_i[i] <- predict(model, s.test.i[i, -c(1, 2)])
+  }
+  plot.s$prediction <- pred
+  plot.s$prediction_all <- pred_t
+  plot.s$prediction_inc <- pred_i
+  line.width <- 1.05
+  plot <- ggplot(plot.s, aes(x=date)) +
+    geom_line(aes(y=new_cases, colour='black', group = 1), size=line.width, ) +
+    geom_line(aes(y=prediction, colour='green', group = 2), size=line.width) +
+    geom_line(aes(y=prediction_all, colour='magenta', group = 3), size=line.width) +
+    geom_line(aes(y=prediction_inc, colour='pink', group = 4), size=line.width) +
+    scale_color_discrete(name = "Legend", labels = c("real_cases", "reduced stringency", "real stringency", "increased stringency")) +
+    geom_vline(xintercept = plot.s$date[split], linetype="dashed", color = "blue", size=line.width) +
+    scale_x_date("Days", breaks = "5 days") + ggtitle(country)
+    theme_minimal() + 
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  print(plot)
+}
+
+single_state_prediction.3('KOR', 50, adj.fit)
+single_state_prediction.3('USA', 50, adj.fit)
+single_state_prediction.3('URY', 50, adj.fit)
+single_state_prediction.3('IRN', 25, adj.fit)
